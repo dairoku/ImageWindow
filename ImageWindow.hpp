@@ -26,7 +26,7 @@
 /*!
 	\file		ImageWindow.hpp
 	\author		Dairoku Sekiguchi
-	\version	3.0 (Release.03)
+	\version	3.0 (Release.04)
 	\date		2018/07/07
 	\brief		Single file image displaying utility class
 */
@@ -132,6 +132,7 @@ public:
 		mModuleH				= GetModuleHandle(NULL);
 		mCursorMode				= CURSOR_MODE_SCROLL_TOOL;
 
+		mIsHiDPI = false;
 		mIsColorImage			= false;
 		mIs16BitsImage			= false;
 
@@ -1883,6 +1884,8 @@ private:
 	unsigned char		*mBitmapBits;
 	unsigned int		mBitmapBitsSize;
 
+	bool				mIsHiDPI;
+
 	bool				mIsThreadRunning;
 
 	unsigned char		*mAllocatedImageBuffer;
@@ -2413,6 +2416,15 @@ private:
 		::SetWindowLongPtr(imageDisp->mWindowH, GWLP_USERDATA, PtrToLong(imageDisp));
 #endif
 
+		// Check DPI
+		double fx = GetSystemMetrics(SM_CXSMICON) / 16.0f;
+		double fy = GetSystemMetrics(SM_CYSMICON) / 16.0f;
+		if (fx < 1) fx = 1;
+		if (fy < 1) fy = 1;
+		//printf("%f, %f\n", fx, fy);
+		if (fx >= 1.5 || fy >= 1.5)
+			imageDisp->mIsHiDPI = true;
+
 		imageDisp->InitToolbar();
 		imageDisp->InitCursor();
 
@@ -2904,9 +2916,9 @@ private:
 		typedef int			(WINAPI *_ImageList_AddMasked)(HIMAGELIST himl, HBITMAP hbmImage, COLORREF crMask);
 
 		static HINSTANCE				hComctl32 = NULL;
-		static _InitCommonControlsEx	_zo_InitCommonControlsEx = NULL;
-		static _ImageList_Create		_zo_ImageList_Create = NULL;
-		static _ImageList_AddMasked	_zo_ImageList_AddMasked = NULL;
+		static _InitCommonControlsEx	_iw_InitCommonControlsEx = NULL;
+		static _ImageList_Create		_iw_ImageList_Create = NULL;
+		static _ImageList_AddMasked	_iw_ImageList_AddMasked = NULL;
 
 		//	to bypass "comctl32.lib" linking, do some hack...
 		if (hComctl32 == NULL)
@@ -2918,12 +2930,12 @@ private:
 				return;
 			}
 
-			_zo_InitCommonControlsEx = (_InitCommonControlsEx )GetProcAddress(hComctl32, "InitCommonControlsEx");
-			_zo_ImageList_Create = (_ImageList_Create )GetProcAddress(hComctl32, "ImageList_Create");
-			_zo_ImageList_AddMasked = (_ImageList_AddMasked )GetProcAddress(hComctl32, "ImageList_AddMasked");
-			if (_zo_InitCommonControlsEx == NULL ||
-				_zo_ImageList_Create == NULL ||
-				_zo_ImageList_AddMasked == NULL)
+			_iw_InitCommonControlsEx = (_InitCommonControlsEx )GetProcAddress(hComctl32, "InitCommonControlsEx");
+			_iw_ImageList_Create = (_ImageList_Create )GetProcAddress(hComctl32, "ImageList_Create");
+			_iw_ImageList_AddMasked = (_ImageList_AddMasked )GetProcAddress(hComctl32, "ImageList_AddMasked");
+			if (_iw_InitCommonControlsEx == NULL ||
+				_iw_ImageList_Create == NULL ||
+				_iw_ImageList_AddMasked == NULL)
 			{
 				printf("GetProcAddress failed. Panic\n");
 				return;
@@ -2933,7 +2945,7 @@ private:
 			INITCOMMONCONTROLSEX icx;
 			icx.dwSize = sizeof(INITCOMMONCONTROLSEX);
 			icx.dwICC = ICC_BAR_CLASSES | ICC_COOL_CLASSES; // Specify BAR classes
-			(*_zo_InitCommonControlsEx)(&icx); // Load the common control DLL
+			(*_iw_InitCommonControlsEx)(&icx); // Load the common control DLL
 		}
 
 		mRebarH = CreateWindowEx(WS_EX_TOOLWINDOW, REBARCLASSNAME, NULL,
@@ -2953,7 +2965,7 @@ private:
 		{
 			tbb[i].fsState = TBSTATE_ENABLED;
 			tbb[i].fsStyle = TBSTYLE_BUTTON | BTNS_AUTOSIZE;
-			tbb[i].dwData = 0L;
+      tbb[i].dwData = 0L;
 			tbb[i].iString = 0;
 			tbb[i].iBitmap = MAKELONG(0, 0);
 		}
@@ -2994,8 +3006,8 @@ private:
 		SendMessage(mToolbarH, CCM_SETVERSION, (WPARAM )5, (LPARAM )0);
 		SendMessage(mToolbarH, TB_BUTTONSTRUCTSIZE, (WPARAM )sizeof(TBBUTTON), 0);
 
-		static const unsigned char header[] = {
-			0x28, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x04,
+		static const unsigned char imageHeader[] = {
+      0x28, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x04,
 			0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0xC3, 0x0E, 0x00, 0x00, 0xC3, 0x0E,
 			0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0x34,
 			0x8A, 0x38, 0x00, 0x0D, 0x26, 0xA1, 0x00, 0xCA, 0xCF, 0xE6, 0x00, 0x1A, 0x7D, 0xC2, 0x00,
@@ -3004,7 +3016,7 @@ private:
 			0x6F, 0x00, 0x86, 0x86, 0x86, 0x00, 0xE6, 0xE4, 0xE5, 0x00, 0xF6, 0xF6, 0xF6, 0x00
 		};
 
-		static const unsigned char data[12][128] = {{	// Save Icon
+		static const unsigned char imageData[12][128] = {{	// Save Icon
 			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 			0xF0, 0x0F, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0xF0, 0x0F, 0x88, 0x88, 0x88, 0x88, 0x88,
 			0x88, 0xF0, 0x0F, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0xF0, 0x0F, 0x88, 0x88, 0x88, 0x88,
@@ -3126,22 +3138,58 @@ private:
 			0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xF0
 		}};
 
+		unsigned char header[sizeof(imageHeader)];
+		unsigned char data[512];
+		::CopyMemory(header, imageHeader, sizeof(imageHeader));
 		BITMAPINFOHEADER	*bitmapHeader = (BITMAPINFOHEADER *)header;
-		HIMAGELIST	imageList = (*_zo_ImageList_Create)(
-			bitmapHeader->biWidth,
-			bitmapHeader->biHeight,
-			ILC_COLOR24 | ILC_MASK, 1, 1);
-		HBITMAP	bitmap;
+		if (mIsHiDPI)
+		{
+			bitmapHeader->biHeight *= 2;
+			bitmapHeader->biWidth  *= 2;
+			bitmapHeader->biSizeImage *= 4;
+		}
+		HIMAGELIST	imageList = (*_iw_ImageList_Create)(
+				bitmapHeader->biWidth,
+				bitmapHeader->biHeight,
+				ILC_COLOR24 | ILC_MASK, 1, 1);
+	
 		for (int i = 0; i < 12; i++)
 		{
-			bitmap = CreateDIBitmap(
+			const unsigned char *imagePtr = imageData[i];
+			if (mIsHiDPI)
+			{
+				int h = bitmapHeader->biHeight / 2;
+				int w = bitmapHeader->biWidth / 4;
+				const unsigned char *srcPtr = imageData[i];
+				unsigned char *dst0Ptr = data;
+				unsigned char *dst1Ptr = dst0Ptr + (bitmapHeader->biWidth / 2);
+				for (int y = 0; y < h; y++)
+				{
+					for (int x = 0; x < w; x++)
+					{
+						*dst0Ptr = (*srcPtr & 0xF0) + (*srcPtr >> 4);
+						*dst1Ptr = *dst0Ptr;
+						dst0Ptr++;
+						dst1Ptr++;
+						*dst0Ptr = (*srcPtr << 4) + (*srcPtr & 0x0F);
+						*dst1Ptr = *dst0Ptr;
+						dst0Ptr++;
+						dst1Ptr++;
+						srcPtr++;
+					}
+					dst0Ptr += (bitmapHeader->biWidth / 2);
+					dst1Ptr += (bitmapHeader->biWidth / 2);
+				}
+				imagePtr = data;
+			}
+			HBITMAP bitmap = CreateDIBitmap(
 				GetDC(mToolbarH),
 				(BITMAPINFOHEADER *)bitmapHeader,
 				CBM_INIT,
-				data[i],
+				imagePtr,
 				(BITMAPINFO *)bitmapHeader,
 				DIB_RGB_COLORS);
-			(*_zo_ImageList_AddMasked)(imageList, bitmap, RGB(255, 0, 255));
+			(*_iw_ImageList_AddMasked)(imageList, bitmap, RGB(255, 0, 255));
 			DeleteObject(bitmap);
 		}
 
@@ -3154,7 +3202,10 @@ private:
 		rbInfo.fMask = RBBIM_STYLE | RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_SIZE;
 		rbInfo.fStyle = RBBS_CHILDEDGE;
 		rbInfo.cxMinChild = 0;
-		rbInfo.cyMinChild = 25;
+		if (mIsHiDPI)
+		  rbInfo.cyMinChild = 38;
+		else
+		  rbInfo.cyMinChild = 25;
 		rbInfo.cx = 120;
 		rbInfo.lpText = 0;
 		rbInfo.hwndChild = mToolbarH;
@@ -3164,7 +3215,7 @@ private:
 			WS_CHILD | WS_VISIBLE,
 			0, 0, 0, 0, mWindowH, NULL, NULL, NULL);
 		UpdateStatusBar();
-	}
+  }
 
 	void	InitCursor()
 	{
