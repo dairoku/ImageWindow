@@ -125,6 +125,7 @@ public:
 		mMutexHandle			= NULL;
 		mEventHandle			= NULL;
 		mThreadHandle			= NULL;
+		mIsThreadRunning		= false;
 		mBitmapInfo				= NULL;
 		mBitmapInfoSize			= 0;
 		mBitmapBits				= NULL;
@@ -270,7 +271,6 @@ public:
 		{
 			::CloseHandle(mThreadHandle);
 		}
-
 		//	Must use _beginthreadex instead of _beginthread, CreateThread
 		mIsThreadRunning = true;
 		mThreadHandle = (HANDLE )_beginthreadex(
@@ -322,8 +322,7 @@ public:
 
 		if (WaitForSingleObject(mThreadHandle, inTimeout) == WAIT_OBJECT_0)
 			return true;
-
-		return false;
+	return false;
 	}
 
 	static bool	WaitForWindowCloseMulti(ImageWindow *inWindowArray[], int inArrayLen,
@@ -363,7 +362,7 @@ public:
 			bitmapInfo->RGBQuad[0].rgbRed	= 0;
 			bitmapInfo->RGBQuad[0].rgbGreen	= 0;
 			bitmapInfo->RGBQuad[0].rgbBlue	= 0;
-			bitmapInfo->RGBQuad[1].rgbRed	= 255; 
+			bitmapInfo->RGBQuad[1].rgbRed	= 255;
 			bitmapInfo->RGBQuad[1].rgbGreen	= 255;
 			bitmapInfo->RGBQuad[1].rgbBlue	= 255;
 			return;
@@ -372,26 +371,26 @@ public:
 		{
 			for (int i = 0; i < 64; i++)
 			{
-				bitmapInfo->RGBQuad[i      ].rgbRed		= 0; 
+				bitmapInfo->RGBQuad[i      ].rgbRed		= 0;
 				bitmapInfo->RGBQuad[i      ].rgbGreen	= i * 4;
 				bitmapInfo->RGBQuad[i      ].rgbBlue	= 255;
 
-				bitmapInfo->RGBQuad[i +  64].rgbRed		= 0; 
+				bitmapInfo->RGBQuad[i +  64].rgbRed		= 0;
 				bitmapInfo->RGBQuad[i +  64].rgbGreen	= 255;
 				bitmapInfo->RGBQuad[i +  64].rgbBlue	= (255 - i * 4);
 
-				bitmapInfo->RGBQuad[i + 128].rgbRed		= i * 4; 
+				bitmapInfo->RGBQuad[i + 128].rgbRed		= i * 4;
 				bitmapInfo->RGBQuad[i + 128].rgbGreen	= 255;
 				bitmapInfo->RGBQuad[i + 128].rgbBlue	= 0;
 
-				bitmapInfo->RGBQuad[i + 192].rgbRed		= 255; 
+				bitmapInfo->RGBQuad[i + 192].rgbRed		= 255;
 				bitmapInfo->RGBQuad[i + 192].rgbGreen	= (255 - i * 4);
 				bitmapInfo->RGBQuad[i + 192].rgbBlue	= 0;
 			}
 			bitmapInfo->RGBQuad[0].rgbRed	= 0;
 			bitmapInfo->RGBQuad[0].rgbGreen	= 0;
 			bitmapInfo->RGBQuad[0].rgbBlue	= 0;
-			bitmapInfo->RGBQuad[1].rgbRed	= 255; 
+			bitmapInfo->RGBQuad[1].rgbRed	= 255;
 			bitmapInfo->RGBQuad[1].rgbGreen	= 255;
 			bitmapInfo->RGBQuad[1].rgbBlue	= 255;
 			return;
@@ -461,14 +460,14 @@ public:
 			};
 			for (int i = 0; i < 256; i++)
 			{
-				bitmapInfo->RGBQuad[i].rgbRed		= tableR[i]; 
+				bitmapInfo->RGBQuad[i].rgbRed		= tableR[i];
 				bitmapInfo->RGBQuad[i].rgbGreen		= tableG[i];
 				bitmapInfo->RGBQuad[i].rgbBlue		= tableB[i];
 			}
-			bitmapInfo->RGBQuad[0].rgbRed	= 0; 
+			bitmapInfo->RGBQuad[0].rgbRed	= 0;
 			bitmapInfo->RGBQuad[0].rgbGreen	= 0;
 			bitmapInfo->RGBQuad[0].rgbBlue	= 0;
-			bitmapInfo->RGBQuad[1].rgbRed	= 255; 
+			bitmapInfo->RGBQuad[1].rgbRed	= 255;
 			bitmapInfo->RGBQuad[1].rgbGreen	= 255;
 			bitmapInfo->RGBQuad[1].rgbBlue	= 255;
 			printf("I was here\n");
@@ -481,15 +480,15 @@ public:
 			{
 				for (int i = 0; i < 64; i++)
 				{
-					bitmapInfo->RGBQuad[i+j*64].rgbRed		= i * 3 + 64; 
+					bitmapInfo->RGBQuad[i+j*64].rgbRed		= i * 3 + 64;
 					bitmapInfo->RGBQuad[i+j*64].rgbGreen	= i * 3 + 64;
 					bitmapInfo->RGBQuad[i+j*64].rgbBlue		= i * 3 + 64;
 				}
 			}
-			bitmapInfo->RGBQuad[0].rgbRed	= 0; 
+			bitmapInfo->RGBQuad[0].rgbRed	= 0;
 			bitmapInfo->RGBQuad[0].rgbGreen	= 0;
 			bitmapInfo->RGBQuad[0].rgbBlue	= 0;
-			bitmapInfo->RGBQuad[1].rgbRed	= 255; 
+			bitmapInfo->RGBQuad[1].rgbRed	= 255;
 			bitmapInfo->RGBQuad[1].rgbGreen	= 255;
 			bitmapInfo->RGBQuad[1].rgbBlue	= 255;
 			return;
@@ -500,15 +499,15 @@ public:
 			{
 				for (int i = 0; i < 32; i++)
 				{
-					bitmapInfo->RGBQuad[i+j*32].rgbRed		= i * 7 + 32; 
+					bitmapInfo->RGBQuad[i+j*32].rgbRed		= i * 7 + 32;
 					bitmapInfo->RGBQuad[i+j*32].rgbGreen	= i * 7 + 32;
 					bitmapInfo->RGBQuad[i+j*32].rgbBlue		= i * 7 + 32;
 				}
 			}
-			bitmapInfo->RGBQuad[0].rgbRed	= 0; 
+			bitmapInfo->RGBQuad[0].rgbRed	= 0;
 			bitmapInfo->RGBQuad[0].rgbGreen	= 0;
 			bitmapInfo->RGBQuad[0].rgbBlue	= 0;
-			bitmapInfo->RGBQuad[1].rgbRed	= 255; 
+			bitmapInfo->RGBQuad[1].rgbRed	= 255;
 			bitmapInfo->RGBQuad[1].rgbGreen	= 255;
 			bitmapInfo->RGBQuad[1].rgbBlue	= 255;
 			return;
@@ -519,15 +518,15 @@ public:
 			{
 				for (int i = 0; i < 16; i++)
 				{
-					bitmapInfo->RGBQuad[i+j*16].rgbRed		= i * 15 + 16; 
+					bitmapInfo->RGBQuad[i+j*16].rgbRed		= i * 15 + 16;
 					bitmapInfo->RGBQuad[i+j*16].rgbGreen	= i * 15 + 16;
 					bitmapInfo->RGBQuad[i+j*16].rgbBlue		= i * 15 + 16;
 				}
 			}
-			bitmapInfo->RGBQuad[0].rgbRed	= 0; 
+			bitmapInfo->RGBQuad[0].rgbRed	= 0;
 			bitmapInfo->RGBQuad[0].rgbGreen	= 0;
 			bitmapInfo->RGBQuad[0].rgbBlue	= 0;
-			bitmapInfo->RGBQuad[1].rgbRed	= 255; 
+			bitmapInfo->RGBQuad[1].rgbRed	= 255;
 			bitmapInfo->RGBQuad[1].rgbGreen	= 255;
 			bitmapInfo->RGBQuad[1].rgbBlue	= 255;
 			return;
@@ -538,15 +537,15 @@ public:
 			{
 				for (int i = 0; i < 8; i++)
 				{
-					bitmapInfo->RGBQuad[i+j* 8].rgbRed		= i * 32; 
+					bitmapInfo->RGBQuad[i+j* 8].rgbRed		= i * 32;
 					bitmapInfo->RGBQuad[i+j* 8].rgbGreen	= i * 32;
 					bitmapInfo->RGBQuad[i+j* 8].rgbBlue		= i * 32;
 				}
 			}
-			bitmapInfo->RGBQuad[0].rgbRed	= 0; 
+			bitmapInfo->RGBQuad[0].rgbRed	= 0;
 			bitmapInfo->RGBQuad[0].rgbGreen	= 0;
 			bitmapInfo->RGBQuad[0].rgbBlue	= 0;
-			bitmapInfo->RGBQuad[1].rgbRed	= 255; 
+			bitmapInfo->RGBQuad[1].rgbRed	= 255;
 			bitmapInfo->RGBQuad[1].rgbGreen	= 255;
 			bitmapInfo->RGBQuad[1].rgbBlue	= 255;
 			return;
@@ -612,7 +611,7 @@ public:
 		doUpdateSize = PrepareImageBuffers(inWidth, inHeight, inIsColor, inIsBottomUp, inIs16Bits);
 
 		ReleaseMutex(mMutexHandle);
-		
+
 		if (doUpdateSize)
 			UpdateWindowSize();
 	}
@@ -634,7 +633,7 @@ public:
 
 		ReleaseMutex(mMutexHandle);
 		UpdateFPS();
-		
+
 		if (doUpdateSize)
 			UpdateWindowSize();
 		else
@@ -712,7 +711,7 @@ public:
 		if (mIs16BitsImage)
 			Update16BitsImageDisp();
 		UpdateImageDisp();
-	}	
+	}
 	void	DumpBitmapInfo()
 	{
 		printf("[Dump BitmapInfo : %s]\n", mWindowTitle);
@@ -740,7 +739,7 @@ public:
 		printf("\n");
 
 		printf(" mBitmapInfoSize =  %d bytes\n", mBitmapInfoSize);
-		printf(" RGBQUAD number  =  %d\n", (mBitmapInfoSize - mBitmapInfo->biSize) / sizeof(RGBQUAD));
+		printf(" RGBQUAD number  =  %d\n", (mBitmapInfoSize - mBitmapInfo->biSize) / (unsigned int )sizeof(RGBQUAD));
 		printf(" mBitmapBitsSize =  %d bytes\n", mBitmapBitsSize);
 	}
 
@@ -766,7 +765,7 @@ public:
 	}
 
 	bool	OpenBitmapFile(const char *inFileName)
-	{	
+	{
 		FILE	*fp;
 		BITMAPFILEHEADER	fileHeader;
 
@@ -783,7 +782,7 @@ public:
 			return false;
 		}
 
-		
+
 		DWORD	result = WaitForSingleObject(mMutexHandle, INFINITE);
 		if (result != WAIT_OBJECT_0)
 		{
@@ -915,7 +914,7 @@ public:
 		fileHeader.bfReserved1 = 0;
 		fileHeader.bfReserved2 = 0;
 		fileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + mBitmapInfoSize;
-		
+
 		if (inIsUnicode == false)
 		{
 			if (inFileName != NULL)
@@ -987,7 +986,7 @@ public:
 
 	RECT	GetImageClientRect()
 	{
-		return mImageDispRect;
+		return mImageClientRect;
 	}
 
 	bool	IsBottomUpImage()
@@ -1038,14 +1037,15 @@ public:
 		mImageDispScale = inScale;
 		CheckImageDispOffset();
 		UpdateStatusBar();
-		
-		double	scale = mImageDispScale / 100.0;
+
+		UpdateImageDispDispRect();
+		/*double	scale = mImageDispScale / 100.0;
 		if (prevImageDispScale > mImageDispScale &&
 			((int )(mImageSize.cx * scale) <= mImageDispRect.right - mImageDispRect.left ||
 			 (int )(mImageSize.cy * scale) <= mImageDispRect.bottom - mImageDispRect.top))
 			UpdateImageDisp(true);
 		else
-			UpdateImageDisp();
+			UpdateImageDisp();*/
 
 		UpdateMouseCursor();
 	}
@@ -1053,13 +1053,15 @@ public:
 	double	CalcWindowSizeFitScale()
 	{
 		double	imageRatio = (double )mImageSize.cy / (double )mImageSize.cx;
-		double	dispRatio = (double )mImageDispSize.cy / (double )mImageDispSize.cx;
+		double width = mImageClientRect.right - mImageClientRect.left;
+		double height = mImageClientRect.bottom - mImageClientRect.top;
+		double	dispRatio = (double )mImageClientRect.bottom / width;
 		double	scale;
 
 		if (imageRatio > dispRatio)
-			scale = (double )mImageDispSize.cy / (double )mImageSize.cy;
+			scale = height / (double )mImageSize.cy;
 		else
-			scale = (double )mImageDispSize.cx / (double )mImageSize.cx;
+			scale = width / (double )mImageSize.cx;
 
 		return scale * 100.0;
 	}
@@ -1314,7 +1316,7 @@ public:
 					srcPtr++;
 					dstPtr++;
 				}
-			}			
+			}
 		}
 
 		inBitmapInfo->biHeight *= -1;
@@ -1343,10 +1345,10 @@ public:
 int					mImageClickNum;
 int					mLastImageClickX;
 int					mLastImageClickY;
-	
+
 //	HWND			GetWindowHandle() { return mWindowH; }
 	const BITMAPINFOHEADER	*GetBitmapInfo() { return mBitmapInfo; }
-	
+
 protected:
 	enum
 	{
@@ -1605,7 +1607,7 @@ protected:
 						value = mAllocated16BitsImageBuffer[x + y * mImageSize.cx];
 					if (mExternal16BitsImageBuffer != NULL)
 						value = mExternal16BitsImageBuffer[x + y * mImageSize.cx];
-					
+
 					printf("%d: X:%.4d Y:%.4d VALUE:%.3d %.5d\n", mImageClickNum, x, y, v, value);
 				}
 				else
@@ -1824,7 +1826,7 @@ protected:
 	{
 		if (mWindowState != WINDOW_OPEN_STATE)
 			return;
-		::InvalidateRect(mWindowH, &mImageDispRect, inErase);
+		::InvalidateRect(mWindowH, &mImageClientRect, inErase);
 	}
 
 	double	CalcImageScale(int inStep)
@@ -1894,6 +1896,7 @@ private:
 
 	SIZE				mImageSize;
 	RECT				mImageDispRect;
+	RECT				mImageClientRect;
 	SIZE				mImageDispSize;
 	SIZE				mImageDispOffset;
 	double				mImageDispScale;
@@ -1949,17 +1952,17 @@ private:
 	{
 		if (mWindowState != WINDOW_OPEN_STATE || mBitmapInfo == NULL)
 			return;
-		
+
 		unsigned __int64	currentCount;
 		::QueryPerformanceCounter((LARGE_INTEGER *)&currentCount);
 
 		mFPSValue = 1.0 * (double )mFrequency / (double )(currentCount - mPrevCount);
 		mPrevCount = currentCount;
-		
+
 		if (mFPSDataCount < FPS_DATA_NUM)
 			mFPSDataCount++;
 		else
-			::MoveMemory(mFPSData, &(mFPSData[1]), sizeof(double) * (FPS_DATA_NUM - 1));	
+			::MoveMemory(mFPSData, &(mFPSData[1]), sizeof(double) * (FPS_DATA_NUM - 1));
 		mFPSData[mFPSDataCount - 1] = mFPSValue;
 
 		double	averageValue = 0;
@@ -2123,9 +2126,10 @@ private:
 		rect.top = 0;
 		rect.right = imageWidth;
 		rect.bottom = imageHeight + rebarHeight + statusbarHeight;
-		mImageDispRect = rect;
-		mImageDispRect.top = rebarHeight;
-		mImageDispRect.bottom -= statusbarHeight;
+		mImageClientRect = rect;
+		mImageClientRect.top = rebarHeight;
+		mImageClientRect.bottom -= statusbarHeight;
+		mImageDispRect = mImageClientRect;
 		mImageDispSize.cx = mImageDispRect.right - mImageDispRect.left;
 		mImageDispSize.cy = mImageDispRect.bottom - mImageDispRect.top;
 		mImageDispOffset.cx = 0;
@@ -2157,9 +2161,31 @@ private:
 		GetClientRect(mWindowH, &rect);
 		rect.top += rebarHeight;
 		rect.bottom -= statusbarHeight;
+		mImageClientRect = rect;
+		bool	update = false;
+		{
+			int imageWidth = (int )(mImageSize.cx * mImageDispScale / 100.0);
+			int imageHeight = (int )(mImageSize.cy * mImageDispScale / 100.0);
+			if (imageWidth < rect.right - rect.left)
+			{
+				rect.left	+= (rect.right - rect.left - imageWidth) / 2;
+				rect.right	+= rect.left + imageWidth;
+				update = true;
+			}
+			if (imageHeight < rect.bottom - rect.top)
+			{
+				rect.top	+= (rect.bottom - rect.top - imageHeight) / 2;
+				rect.right	+= rect.top + imageHeight;
+				update = true;
+			}
+		}
 		mImageDispRect = rect;
 		mImageDispSize.cx = mImageDispRect.right - mImageDispRect.left;
 		mImageDispSize.cy = mImageDispRect.bottom - mImageDispRect.top;
+		if (update)
+			UpdateImageDisp(true);
+		else
+			UpdateImageDisp();
 	}
 
 
@@ -2369,7 +2395,7 @@ private:
 
 	static unsigned int _stdcall	ThreadFunc(void *arg)
 	{
-		ImageWindow	*imageDisp = (ImageWindow *)arg;	
+		ImageWindow	*imageDisp = (ImageWindow *)arg;
 		LPCTSTR	windowName;
 
 		//	Initialze important vairables
@@ -2437,7 +2463,7 @@ private:
 			TEXT("Lucida Console"));
 //			TEXT("Courier"));
 
-		
+
 		imageDisp->mWindowState = WINDOW_OPEN_STATE;
 
 		imageDisp->UpdateWindowSize();
@@ -2546,7 +2572,7 @@ private:
 	{
 		ImageWindow	*imageWindow = (ImageWindow *)inLParam;
 
-		printf("Monitor(%d) %d, %d, %d, %d\n", imageWindow->mMonitorNum, 
+		printf("Monitor(%d) %d, %d, %d, %d\n", imageWindow->mMonitorNum,
 			inMonRect->left, inMonRect->top, inMonRect->right, inMonRect->bottom);
 		imageWindow->mMonitorRect[imageWindow->mMonitorNum].left = inMonRect->left;
 		imageWindow->mMonitorRect[imageWindow->mMonitorNum].top = inMonRect->top;
@@ -2573,7 +2599,7 @@ private:
 		InitIcon();
 
 		ZeroMemory(&wcx,sizeof(WNDCLASSEX));
-		wcx.cbSize = sizeof(WNDCLASSEX); 
+		wcx.cbSize = sizeof(WNDCLASSEX);
 
 		wcx.hInstance = mModuleH;
 		wcx.lpszClassName = IMAGE_WINDOW_CLASS_NAME;
@@ -2606,7 +2632,7 @@ private:
 			delete mAllocated16BitsImageBuffer;
 			mAllocated16BitsImageBuffer = NULL;
 		}
-		
+
 		if (mAllocatedImageBuffer != NULL && doUpdateSize != false)
 		{
 			delete mAllocatedImageBuffer;
@@ -3152,7 +3178,7 @@ private:
 				bitmapHeader->biWidth,
 				bitmapHeader->biHeight,
 				ILC_COLOR24 | ILC_MASK, 1, 1);
-	
+
 		for (int i = 0; i < 12; i++)
 		{
 			const unsigned char *imagePtr = imageData[i];
@@ -3283,13 +3309,23 @@ private:
 			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 		}};
 
-		//	When we want to use color cursor, we will have to use
-		//	CreateIconIndirect() or CreateIconFromResorceEx()
-		mScrollCursor = CreateCursor(mModuleH, 0, 0, 32, 32, andPlane[0], xorPlane[0]);
-		mArrowCursor = LoadCursor(NULL, IDC_ARROW);
-		mZoomPlusCursor = CreateCursor(mModuleH, 0, 0, 32, 32, andPlane[1], xorPlane[1]);
-		mZoomMinusCursor = CreateCursor(mModuleH, 0, 0, 32, 32, andPlane[2], xorPlane[2]);
-		mInfoCursor = LoadCursor(NULL, IDC_CROSS);
+		if (mIsHiDPI == false)
+		{
+			mScrollCursor		= CreateCursor(mModuleH, 0, 0, 32, 32, andPlane[0], xorPlane[0]);
+			mZoomPlusCursor		= CreateCursor(mModuleH, 0, 0, 32, 32, andPlane[1], xorPlane[1]);
+			mZoomMinusCursor	= CreateCursor(mModuleH, 0, 0, 32, 32, andPlane[2], xorPlane[2]);
+		}
+		else
+		{
+			// ToDo : Improve this workaround.
+			// At least, mZoomPlusCursor and mZoomMinusCursor
+			mScrollCursor		= LoadCursor(NULL, IDC_SIZEALL);
+			mZoomPlusCursor		= LoadCursor(NULL, IDC_ARROW);
+			mZoomMinusCursor	= LoadCursor(NULL, IDC_ARROW);
+		}
+
+		mArrowCursor	= LoadCursor(NULL, IDC_ARROW);
+		mInfoCursor		= LoadCursor(NULL, IDC_CROSS);
 	}
 
 	void	InitIcon()
