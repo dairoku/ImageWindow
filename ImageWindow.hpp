@@ -24,10 +24,10 @@
 //  SOFTWARE.
 // =============================================================================
 /*!
-  \file   ImageWindow.hpp
+  \file     ImageWindow.hpp
   \author   Dairoku Sekiguchi
   \version  4.0 (Release.05)
-  \date   2023/09/23
+  \date     2023/09/23
   \brief    Single file image displaying utility class
 */
 #ifndef __IMAGE_WINDOW_H
@@ -40,9 +40,7 @@
 #pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='amd64' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #endif
 
-// -----------------------------------------------------------------------------
-//  include files
-// -----------------------------------------------------------------------------
+// Includes --------------------------------------------------------------------
 #include <windows.h>
 #include <string.h>
 #include <process.h>
@@ -50,9 +48,7 @@
 #include <commctrl.h>
 #include <math.h>
 
-// -----------------------------------------------------------------------------
-//  macros
-// -----------------------------------------------------------------------------
+// Macros ----------------------------------------------------------------------
 #define IMAGE_PALLET_SIZE_8BIT    256
 #define IMAGE_WINDOW_CLASS_NAME   TEXT("ImageWindow")
 #define IMAGE_WINDOW_DEFAULT_SIZE 160
@@ -67,9 +63,7 @@
 #define IMAGE_ZOOM_STEP           1
 #define MOUSE_WHEEL_STEP          60
 
-// -----------------------------------------------------------------------------
-//  typedefs
-// -----------------------------------------------------------------------------
+// Typedefs --------------------------------------------------------------------
 typedef struct
 {
   BITMAPINFOHEADER    Header;
@@ -79,14 +73,10 @@ typedef struct
 // -----------------------------------------------------------------------------
 //  ImageWindow class
 // -----------------------------------------------------------------------------
-//!
-/*!
-  The class for Image Data Container and Window
-*/
 class ImageWindow
 {
 public:
-  // enum --------------------------------------------------------------------
+  // Enums ---------------------------------------------------------------------
   enum CursorMode
   {
     CURSOR_MODE_SCROLL_TOOL = 1,
@@ -94,69 +84,57 @@ public:
     CURSOR_MODE_INFO_TOOL
   };
 
-  // -------------------------------------------------------------------------
-  //  ImageWindow(...)
-  // -------------------------------------------------------------------------
-  //! ImageWindow Class Constructor
-  /*!
-    xxxx
-  */
+  // Constructors and Destructor -----------------------------------------------
+  // ---------------------------------------------------------------------------
+  // ImageWindow
+  // ---------------------------------------------------------------------------
   ImageWindow(const char *inWindowName = NULL,
             int inPosX = IMAGE_WINDOW_AUTO_POS,
             int inPosY = IMAGE_WINDOW_DEFAULT_POS)
   {
-    static int  sPrevPosX = 0;
-    static int  sPrevPosY = 0;
+    static int  sPrevPosX   = 0;
+    static int  sPrevPosY   = 0;
     static int  sWindowNum  = 0;
 
-    mWindowState      = WINDOW_INIT_STATE;
-    mWindowTitle      = NULL;
-    mFileNameIndex      = 0;
-    mWindowH        = NULL;
-    mToolbarH       = NULL;
-    mStatusbarH       = NULL;
-    mRebarH         = NULL;
-    mMenuH          = NULL;
-    mMutexHandle      = NULL;
-    mEventHandle      = NULL;
-    mThreadHandle     = NULL;
-    mIsThreadRunning    = false;
-    mBitmapInfo       = NULL;
-    mBitmapInfoSize     = 0;
-    mBitmapBits       = NULL;
-    mBitmapBitsSize     = 0;
-    mModuleH        = GetModuleHandle(NULL);
-    mCursorMode       = CURSOR_MODE_SCROLL_TOOL;
+    mWindowState          = WINDOW_INIT_STATE;
+    mWindowTitle          = NULL;
+    mFileNameIndex        = 0;
+    mWindowH              = NULL;
+    mToolbarH             = NULL;
+    mStatusbarH           = NULL;
+    mRebarH               = NULL;
+    mMenuH                = NULL;
+    mMutexHandle          = NULL;
+    mEventHandle          = NULL;
+    mThreadHandle         = NULL;
+    mIsThreadRunning      = false;
+    mBitmapInfo           = NULL;
+    mBitmapInfoSize       = 0;
+    mBitmapBits           = NULL;
+    mBitmapBitsSize       = 0;
+    mModuleH              = GetModuleHandle(NULL);
+    mCursorMode           = CURSOR_MODE_SCROLL_TOOL;
 
     mIsHiDPI = false;
-    mIsColorImage     = false;
-    mIs16BitsImage      = false;
+    mIsColorImage         = false;
 
-    mIsMouseDragging    = false;
-    mIsFullScreenMode   = false;
-    mIsMenubarEnabled   = true;
-    mIsToolbarEnabled   = true;
+    mIsMouseDragging      = false;
+    mIsFullScreenMode     = false;
+    mIsMenubarEnabled     = true;
+    mIsToolbarEnabled     = true;
     mIsStatusbarEnabled   = true;
-    mIsPlotEnabled      = false;
+    mIsPlotEnabled        = false;
 
-    mFPSValue       = 0;
+    mFPSValue             = 0;
 
     mAllocatedImageBuffer = NULL;
-    mAllocated16BitsImageBuffer = NULL;
-    mExternal16BitsImageBuffer = NULL;
 
-    mDrawOverlayFunc    = NULL;
-    mOverlayFuncData    = NULL;
+    mDrawOverlayFunc      = NULL;
+    mOverlayFuncData      = NULL;
 
-    mImageClickNum      = 0;
-    mLastImageClickX    = 0;
-    mLastImageClickY    = 0;
-
-    mIsMapModeEnabled   = false;
-    mMapBottomValue     = 0;
-    mMapTopValue      = 65535;
-    mIsMapReverse     = false;
-    mMapDirectMapLimit    = 0;
+    mImageClickNum        = 0;
+    mLastImageClickX      = 0;
+    mLastImageClickY      = 0;
 
     if (inPosX == IMAGE_WINDOW_AUTO_POS ||
       inPosY == IMAGE_WINDOW_AUTO_POS)
@@ -230,6 +208,9 @@ public:
     sWindowNum++;
   }
 
+  // ---------------------------------------------------------------------------
+  // ~ImageWindow
+  // ---------------------------------------------------------------------------
   virtual ~ImageWindow()
   {
     if (mWindowState == WINDOW_OPEN_STATE)
@@ -349,17 +330,17 @@ public:
     {
       for (int i = 0; i < 255; i++)
       {
-        bitmapInfo->RGBQuad[i].rgbBlue    = i;
-        bitmapInfo->RGBQuad[i].rgbGreen   = i;
-        bitmapInfo->RGBQuad[i].rgbRed   = i;
-        bitmapInfo->RGBQuad[i].rgbReserved  = 0;
+        bitmapInfo->RGBQuad[i].rgbBlue        = i;
+        bitmapInfo->RGBQuad[i].rgbGreen       = i;
+        bitmapInfo->RGBQuad[i].rgbRed         = i;
+        bitmapInfo->RGBQuad[i].rgbReserved    = 0;
       }
-      bitmapInfo->RGBQuad[0].rgbRed = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue  = 0;
-      bitmapInfo->RGBQuad[1].rgbRed = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue  = 255;
+      bitmapInfo->RGBQuad[0].rgbRed           = 0;
+      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
+      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
+      bitmapInfo->RGBQuad[1].rgbRed           = 255;
+      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
+      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
       return;
     }
     if (inIndex == 1)
@@ -382,12 +363,12 @@ public:
         bitmapInfo->RGBQuad[i + 192].rgbGreen = (255 - i * 4);
         bitmapInfo->RGBQuad[i + 192].rgbBlue  = 0;
       }
-      bitmapInfo->RGBQuad[0].rgbRed = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue  = 0;
-      bitmapInfo->RGBQuad[1].rgbRed = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue  = 255;
+      bitmapInfo->RGBQuad[0].rgbRed           = 0;
+      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
+      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
+      bitmapInfo->RGBQuad[1].rgbRed           = 255;
+      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
+      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
       return;
     }
     if (inIndex == 2)
@@ -455,20 +436,18 @@ public:
       };
       for (int i = 0; i < 256; i++)
       {
-        bitmapInfo->RGBQuad[i].rgbRed   = tableR[i];
-        bitmapInfo->RGBQuad[i].rgbGreen   = tableG[i];
-        bitmapInfo->RGBQuad[i].rgbBlue    = tableB[i];
+        bitmapInfo->RGBQuad[i].rgbRed         = tableR[i];
+        bitmapInfo->RGBQuad[i].rgbGreen       = tableG[i];
+        bitmapInfo->RGBQuad[i].rgbBlue        = tableB[i];
       }
-      bitmapInfo->RGBQuad[0].rgbRed = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue  = 0;
-      bitmapInfo->RGBQuad[1].rgbRed = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue  = 255;
-      printf("I was here\n");
+      bitmapInfo->RGBQuad[0].rgbRed           = 0;
+      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
+      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
+      bitmapInfo->RGBQuad[1].rgbRed           = 255;
+      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
+      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
       return;
     }
-
     if (inIndex == 3)
     {
       for (int j = 0; j < 4; j++)
@@ -480,12 +459,12 @@ public:
           bitmapInfo->RGBQuad[i+j*64].rgbBlue   = i * 3 + 64;
         }
       }
-      bitmapInfo->RGBQuad[0].rgbRed = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue  = 0;
-      bitmapInfo->RGBQuad[1].rgbRed = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue  = 255;
+      bitmapInfo->RGBQuad[0].rgbRed           = 0;
+      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
+      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
+      bitmapInfo->RGBQuad[1].rgbRed           = 255;
+      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
+      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
       return;
     }
     if (inIndex == 4)
@@ -499,12 +478,12 @@ public:
           bitmapInfo->RGBQuad[i+j*32].rgbBlue   = i * 7 + 32;
         }
       }
-      bitmapInfo->RGBQuad[0].rgbRed = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue  = 0;
-      bitmapInfo->RGBQuad[1].rgbRed = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue  = 255;
+      bitmapInfo->RGBQuad[0].rgbRed           = 0;
+      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
+      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
+      bitmapInfo->RGBQuad[1].rgbRed           = 255;
+      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
+      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
       return;
     }
     if (inIndex == 5)
@@ -518,12 +497,12 @@ public:
           bitmapInfo->RGBQuad[i+j*16].rgbBlue   = i * 15 + 16;
         }
       }
-      bitmapInfo->RGBQuad[0].rgbRed = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue  = 0;
-      bitmapInfo->RGBQuad[1].rgbRed = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue  = 255;
+      bitmapInfo->RGBQuad[0].rgbRed           = 0;
+      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
+      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
+      bitmapInfo->RGBQuad[1].rgbRed           = 255;
+      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
+      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
       return;
     }
     if (inIndex == 6)
@@ -537,17 +516,17 @@ public:
           bitmapInfo->RGBQuad[i+j* 8].rgbBlue   = i * 32;
         }
       }
-      bitmapInfo->RGBQuad[0].rgbRed = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue  = 0;
-      bitmapInfo->RGBQuad[1].rgbRed = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue  = 255;
+      bitmapInfo->RGBQuad[0].rgbRed           = 0;
+      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
+      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
+      bitmapInfo->RGBQuad[1].rgbRed           = 255;
+      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
+      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
       return;
     }
   }
 
-  void  SetImageBufferPtr(int inWidth, int inHeight, unsigned char *inImagePtr, bool inIsColor, bool inIsBottomUp = false, bool inIs16Bits = false)
+  void  SetImageBufferPtr(int inWidth, int inHeight, unsigned char *inImagePtr, bool inIsColor, bool inIsBottomUp = false)
   {
     DWORD result;
     bool  doUpdateSize;
@@ -559,29 +538,15 @@ public:
       return;
     }
 
-    doUpdateSize = CreateBitmapInfo(inWidth, inHeight, inIsColor, inIsBottomUp, inIs16Bits);
+    doUpdateSize = CreateBitmapInfo(inWidth, inHeight, inIsColor, inIsBottomUp);
 
     if (mAllocatedImageBuffer != NULL)
     {
       delete mAllocatedImageBuffer;
       mAllocatedImageBuffer = NULL;
     }
-    if (mAllocated16BitsImageBuffer != NULL)
-    {
-      delete mAllocated16BitsImageBuffer;
-      mAllocated16BitsImageBuffer = NULL;
-    }
 
-    if (inIs16Bits == false)
-    {
-      mBitmapBits = inImagePtr;
-      mExternal16BitsImageBuffer = NULL;
-    }
-    else
-    {
-      CreateNewImageBuffer(true);
-      mExternal16BitsImageBuffer = (unsigned short *)inImagePtr;
-    }
+    mBitmapBits = inImagePtr;
     ReleaseMutex(mMutexHandle);
     UpdateFPS();
 
@@ -591,7 +556,7 @@ public:
       UpdateImage();
   }
 
-  void  AllocateImageBuffer(int inWidth, int inHeight, bool inIsColor, bool inIsBottomUp = false, bool inIs16Bits = false)
+  void  AllocateImageBuffer(int inWidth, int inHeight, bool inIsColor, bool inIsBottomUp = false)
   {
     DWORD result;
     bool  doUpdateSize;
@@ -603,7 +568,7 @@ public:
       return;
     }
 
-    doUpdateSize = PrepareImageBuffers(inWidth, inHeight, inIsColor, inIsBottomUp, inIs16Bits);
+    doUpdateSize = PrepareImageBuffers(inWidth, inHeight, inIsColor, inIsBottomUp);
 
     ReleaseMutex(mMutexHandle);
 
@@ -611,7 +576,7 @@ public:
       UpdateWindowSize();
   }
 
-  void  CopyIntoImageBuffer(int inWidth, int inHeight, const unsigned char *inImage, bool inIsColor, bool inIsBottomUp = false, bool inIs16Bits = false)
+  void  CopyIntoImageBuffer(int inWidth, int inHeight, const unsigned char *inImage, bool inIsColor, bool inIsBottomUp = false)
   {
     DWORD result;
     bool  doUpdateSize;
@@ -623,7 +588,7 @@ public:
       return;
     }
 
-    doUpdateSize = PrepareImageBuffers(inWidth, inHeight, inIsColor, inIsBottomUp, inIs16Bits);
+    doUpdateSize = PrepareImageBuffers(inWidth, inHeight, inIsColor, inIsBottomUp);
     CopyMemory(GetImageBufferPtr(), inImage, GetImageBufferSize());
 
     ReleaseMutex(mMutexHandle);
@@ -635,67 +600,6 @@ public:
       UpdateImage();
   }
 
-  void  SetMonoImageBufferPtr(int inWidth, int inHeight, unsigned char *inImagePtr, bool inIsBottomUp = false)
-  {
-    SetImageBufferPtr(inWidth, inHeight, inImagePtr, false, inIsBottomUp);
-  }
-
-  void  AllocateMonoImageBuffer(int inWidth, int inHeight, bool inIsBottomUp = false)
-  {
-    AllocateImageBuffer(inWidth, inHeight, false, inIsBottomUp);
-  }
-
-  void  CopyIntoMonoImageBuffer(int inWidth, int inHeight, const unsigned char *inImage, bool inIsBottomUp = false)
-  {
-    CopyIntoImageBuffer(inWidth, inHeight, inImage, false, inIsBottomUp);
-  }
-
-  void  Set16BitsMonoImageBufferPtr(int inWidth, int inHeight, unsigned char *inImagePtr, bool inIsBottomUp = false)
-  {
-    SetImageBufferPtr(inWidth, inHeight, inImagePtr, false, inIsBottomUp, true);
-  }
-
-  void  Allocate16BitsMonoImageBuffer(int inWidth, int inHeight, bool inIsBottomUp = false)
-  {
-    AllocateImageBuffer(inWidth, inHeight, false, inIsBottomUp, true);
-  }
-
-  void  CopyInto16BitsMonoImageBuffer(int inWidth, int inHeight, const unsigned char *inImage, bool inIsBottomUp = false)
-  {
-    CopyIntoImageBuffer(inWidth, inHeight, inImage, false, inIsBottomUp, true);
-  }
-
-  void  SetColorImageBufferPtr(int inWidth, int inHeight, unsigned char *inImagePtr, bool inIsBottomUp = false)
-  {
-    SetImageBufferPtr(inWidth, inHeight, inImagePtr, true, inIsBottomUp);
-  }
-
-  void  AllocateColorImageBuffer(int inWidth, int inHeight, bool inIsBottomUp = false)
-  {
-    AllocateImageBuffer(inWidth, inHeight, true, inIsBottomUp);
-  }
-  void  CopyIntoColorImageBuffer(int inWidth, int inHeight, const unsigned char *inImage, bool inIsBottomUp = false)
-  {
-    CopyIntoImageBuffer(inWidth, inHeight, inImage, true, inIsBottomUp);
-  }
-  void  SetMapMode(unsigned short inMapBottomValue, unsigned short inMapTopValue,
-            bool inIsMapReverse, unsigned short inDirectMapLimit)
-  {
-    if (mIs16BitsImage == false)
-      return;
-
-    mIsMapModeEnabled = true;
-    mMapBottomValue = inMapBottomValue;
-    mMapTopValue = inMapTopValue;
-    mIsMapReverse = inIsMapReverse;
-    mMapDirectMapLimit = inDirectMapLimit;
-
-    UpdateImage();
-  }
-  void  DisableMapMode()
-  {
-    mIsMapModeEnabled = false;
-  }
   void  UpdateImage()
   {
     if (IsWindowOpen() == false)
@@ -703,10 +607,9 @@ public:
 
     UpdateFPS();
     UpdateMousePixelReadout();
-    if (mIs16BitsImage)
-      Update16BitsImageDisp();
     UpdateImageDisp();
   }
+
   void  DumpBitmapInfo()
   {
     printf("[Dump BitmapInfo : %s]\n", mWindowTitle);
@@ -1001,23 +904,17 @@ public:
       return 0;
     return mBitmapInfo->biBitCount;
   }
+
   unsigned char *GetImageBufferPtr()
   {
-    if (mIs16BitsImage == false)
-      return mBitmapBits;
-
-    if (mAllocated16BitsImageBuffer == NULL)
-      return (unsigned char *)mExternal16BitsImageBuffer;
-
-    return (unsigned char *)mAllocated16BitsImageBuffer;
+    return mBitmapBits;
   }
+
   unsigned int  GetImageBufferSize()
   {
-    if (mIs16BitsImage == false)
-      return mBitmapBitsSize;
-
-    return mBitmapBitsSize * sizeof(unsigned short);
+    return mBitmapBitsSize;
   }
+
   double  GetDispScale()
   {
     return mImageDispScale;
@@ -1034,14 +931,6 @@ public:
     UpdateStatusBar();
 
     UpdateImageDispDispRect();
-    /*double  scale = mImageDispScale / 100.0;
-    if (prevImageDispScale > mImageDispScale &&
-      ((int )(mImageSize.cx * scale) <= mImageDispRect.right - mImageDispRect.left ||
-       (int )(mImageSize.cy * scale) <= mImageDispRect.bottom - mImageDispRect.top))
-      UpdateImageDisp(true);
-    else
-      UpdateImageDisp();*/
-
     UpdateMouseCursor();
   }
 
@@ -1594,22 +1483,8 @@ protected:
         int v = mBitmapBits[mImageSize.cx * y + x];
         char  buf[256];
 
-        if (mIs16BitsImage == true)
-        {
-          unsigned short  value = 0;
-
-          if (mAllocated16BitsImageBuffer != NULL)
-            value = mAllocated16BitsImageBuffer[x + y * mImageSize.cx];
-          if (mExternal16BitsImageBuffer != NULL)
-            value = mExternal16BitsImageBuffer[x + y * mImageSize.cx];
-
-          printf("%d: X:%.4d Y:%.4d VALUE:%.3d %.5d\n", mImageClickNum, x, y, v, value);
-        }
-        else
-        {
-          _itoa(v, buf, 2);
-          printf("%d: X:%.4d Y:%.4d VALUE:%.3d %.2X %s\n", mImageClickNum, x, y, v, v, buf);
-        }
+        _itoa(v, buf, 2);
+        printf("%d: X:%.4d Y:%.4d VALUE:%.3d %.2X %s\n", mImageClickNum, x, y, v, v, buf);
         break;
     }
   }
@@ -1886,8 +1761,6 @@ private:
   bool        mIsThreadRunning;
 
   unsigned char   *mAllocatedImageBuffer;
-  unsigned short    *mAllocated16BitsImageBuffer;
-  unsigned short    *mExternal16BitsImageBuffer;
 
   SIZE        mImageSize;
   RECT        mImageDispRect;
@@ -1899,7 +1772,6 @@ private:
   SIZE        mImageDispOffsetStart;
 
   bool        mIsColorImage;
-  bool        mIs16BitsImage;
 
   int         mCursorMode;
   int         mMouseDownMode;
@@ -1927,12 +1799,6 @@ private:
 
   int         mMonitorNum;
   RECT        mMonitorRect[MONITOR_ENUM_MAX];
-
-  bool        mIsMapModeEnabled;
-  unsigned short    mMapBottomValue;
-  unsigned short    mMapTopValue;
-  bool        mIsMapReverse;
-  unsigned short    mMapDirectMapLimit;
 
   void  InitFPS()
   {
@@ -2018,16 +1884,6 @@ private:
     y += mImageDispOffset.cy;
 
     unsigned char *pixelPtr = GetPixelPointer(x, y);
-    unsigned short  value = 0;
-
-    if (mIs16BitsImage == true && mIsColorImage == false
-      && result == true && pixelPtr != NULL)
-    {
-      if (mAllocated16BitsImageBuffer != NULL)
-        value = mAllocated16BitsImageBuffer[x + y * mImageSize.cx];
-      if (mExternal16BitsImageBuffer != NULL)
-        value = mExternal16BitsImageBuffer[x + y * mImageSize.cx];
-    }
 
 #ifdef _UNICODE
     wchar_t buf[IMAGE_STR_BUF_SIZE];
@@ -2036,20 +1892,12 @@ private:
       swprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT(""));
     else
     {
-      if (mIs16BitsImage == true && mIsColorImage == false)
-      {
-        swprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%05d (%d,%d)"), value, x, y);
-      }
+      if (mBitmapInfo->biBitCount == 8)
+        swprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%03d (%d,%d)"), pixelPtr[0], x, y);
       else
-      {
-        if (mBitmapInfo->biBitCount == 8)
-          swprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%03d (%d,%d)"), pixelPtr[0], x, y);
-        else
-          swprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%03d %03d %03d (%d,%d)"),
-                (int )pixelPtr[2], (int )pixelPtr[1], (int )pixelPtr[0], x, y);
-      }
+        swprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%03d %03d %03d (%d,%d)"),
+              (int )pixelPtr[2], (int )pixelPtr[1], (int )pixelPtr[0], x, y);
     }
-
     SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )2, (LPARAM )buf);
 #else
     char  buf[IMAGE_STR_BUF_SIZE];
@@ -2058,22 +1906,14 @@ private:
       sprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT(""));
     else
     {
-      if (mIs16BitsImage == true && mIsColorImage == false)
-      {
-        sprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%05d (%d,%d)"), value, x, y);
-      }
+      if (mBitmapInfo->biBitCount == 8)
+        sprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%03d (%d,%d)"), pixelPtr[0], x, y);
       else
-      {
-        if (mBitmapInfo->biBitCount == 8)
-          sprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%03d (%d,%d)"), pixelPtr[0], x, y);
-        else
-          sprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%03d %03d %03d (%d,%d)"),
-                (int )pixelPtr[2], (int )pixelPtr[1], (int )pixelPtr[0], x, y);
-      }
+        sprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%03d %03d %03d (%d,%d)"),
+              (int )pixelPtr[2], (int )pixelPtr[1], (int )pixelPtr[0], x, y);
     }
     SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )2, (LPARAM )buf);
 #endif
-
     return result;
   }
 
@@ -2318,7 +2158,6 @@ private:
         SelectObject(inHDC, prevFont);
       }
     }
-
     if (mIsPlotEnabled)
     {
       RECT  rect = GetImageClientRect();
@@ -2330,57 +2169,28 @@ private:
       HPEN  hPen = CreatePen(PS_SOLID, 1, RGB(0xFF, 0xFF, 0xFF));
       SelectObject(inHDC, hPen);
 
-      if (mIs16BitsImage)
-      {
-        unsigned short  *imagePtr = (unsigned short *)GetImageBufferPtr();
-        double  k = (rect.bottom - rect.top) / 65535.0;
+      unsigned char *imagePtr = GetImageBufferPtr();
+      double  k = (rect.bottom - rect.top) / 255.0;
 
-        if (mImageClickNum == 0 || mLastImageClickY > height || mLastImageClickY < 0)
-          imagePtr += (width * (height / 2));
-        else
-          imagePtr += (width * mLastImageClickY);
-        x = rect.left;
-
-        for (int i = 0; i < width; i++)
-        {
-          v = k * (*imagePtr);
-          y = rect.bottom - (int )v;
-          if (x != 0)
-          {
-            MoveToEx(inHDC, (x - 1), prevY, NULL);
-            LineTo(inHDC, x, y);
-          }
-          prevY = y;
-          imagePtr++;
-          x++;
-        }
-      }
+      if (mImageClickNum == 0 || mLastImageClickY > height || mLastImageClickY < 0)
+        imagePtr += (width * (height / 2));
       else
+        imagePtr += (width * mLastImageClickY);
+      x = rect.left;
+
+      for (int i = 0; i < width; i++)
       {
-        unsigned char *imagePtr = GetImageBufferPtr();
-        double  k = (rect.bottom - rect.top) / 255.0;
-
-        if (mImageClickNum == 0 || mLastImageClickY > height || mLastImageClickY < 0)
-          imagePtr += (width * (height / 2));
-        else
-          imagePtr += (width * mLastImageClickY);
-        x = rect.left;
-
-        for (int i = 0; i < width; i++)
+        v = k * (*imagePtr);
+        y = rect.bottom - (int )v;
+        if (x != 0)
         {
-          v = k * (*imagePtr);
-          y = rect.bottom - (int )v;
-          if (x != 0)
-          {
-            MoveToEx(inHDC, (x - 1), prevY, NULL);
-            LineTo(inHDC, x, y);
-          }
-          prevY = y;
-          imagePtr++;
-          x++;
+          MoveToEx(inHDC, (x - 1), prevY, NULL);
+          LineTo(inHDC, x, y);
         }
+        prevY = y;
+        imagePtr++;
+        x++;
       }
-
       DeleteObject(hPen);
     }
 
@@ -2616,98 +2426,33 @@ private:
 
     return 1;
   }
-  bool  PrepareImageBuffers(int inWidth, int inHeight, bool inIsColor, bool inIsBottomUp, bool inIs16Bits)
+
+  bool  PrepareImageBuffers(int inWidth, int inHeight, bool inIsColor, bool inIsBottomUp)
   {
-    bool  doUpdateSize = CreateBitmapInfo(inWidth, inHeight, inIsColor, inIsBottomUp, inIs16Bits);
-
-    mExternal16BitsImageBuffer = NULL;
-
-    if (inIs16Bits == false && mAllocated16BitsImageBuffer != NULL)
-    {
-      delete mAllocated16BitsImageBuffer;
-      mAllocated16BitsImageBuffer = NULL;
-    }
+    bool  doUpdateSize = CreateBitmapInfo(inWidth, inHeight, inIsColor, inIsBottomUp);
 
     if (mAllocatedImageBuffer != NULL && doUpdateSize != false)
     {
       delete mAllocatedImageBuffer;
       mAllocatedImageBuffer = NULL;
-      if (mAllocated16BitsImageBuffer != NULL)
-      {
-        delete mAllocated16BitsImageBuffer;
-        mAllocated16BitsImageBuffer = NULL;
-      }
     }
 
     if (mAllocatedImageBuffer == NULL)
       CreateNewImageBuffer(true);
 
-    if (inIs16Bits == true && mAllocated16BitsImageBuffer == NULL)
-      CreateNewImageBuffer16Bits(true);
-
     return doUpdateSize;
   }
-  void  Update16BitsImageDisp()
-  {
-    unsigned short  *srcImagePtr = mAllocated16BitsImageBuffer;
-    unsigned char *dstImagePtr = mAllocatedImageBuffer;
-    double  mapK = 255.0 / (double )(mMapTopValue - mMapBottomValue);
 
-    if (mIsMapModeEnabled == false)
-    {
-      for (int y = 0; y < mImageSize.cy; y++)
-      {
-        for (int x = 0; x < mImageSize.cx; x++)
-        {
-          unsigned short  value = (*srcImagePtr) >> 8;
-          *dstImagePtr = (unsigned char)value;
-          dstImagePtr++;
-          srcImagePtr++;
-        }
-      }
-    }
-    else
-    {
-      for (int y = 0; y < mImageSize.cy; y++)
-      {
-        for (int x = 0; x < mImageSize.cx; x++)
-        {
-          unsigned short  value;
-
-          if (*srcImagePtr <= mMapDirectMapLimit)
-            value = *srcImagePtr;
-          else
-          {
-            double  d;
-            if (mIsMapReverse == false)
-              d = mapK * (double )(*srcImagePtr - mMapBottomValue);
-            else
-              d = 255.0 - (mapK * (double )(*srcImagePtr - mMapBottomValue));
-
-            if (d > 255)
-              d = 255;
-            if (d <= mMapDirectMapLimit)
-              d = mMapDirectMapLimit + 1;
-            value = (unsigned short)d;
-          }
-
-          *dstImagePtr = (unsigned char)value;
-          dstImagePtr++;
-          srcImagePtr++;
-        }
-      }
-    }
-  }
-  bool  CreateBitmapInfo(int inWidth, int inHeight, bool inIsColor, bool inIsBottomUp, bool inIs16Bits)
+  bool  CreateBitmapInfo(int inWidth, int inHeight, bool inIsColor, bool inIsBottomUp)
   {
     mIsColorImage = inIsColor;
-    mIs16BitsImage = inIs16Bits;
 
     if (inIsColor)
       return CreateColorBitmapInfo(inWidth, inHeight, inIsBottomUp);
     else
       return CreateMonoBitmapInfo(inWidth, inHeight, inIsBottomUp);
   }
+
   int   CreateNewImageBuffer(bool inDoZeroClear)
   {
     mAllocatedImageBuffer = new unsigned char[mBitmapBitsSize];
@@ -2723,21 +2468,6 @@ private:
 
     return 1;
   }
-  int   CreateNewImageBuffer16Bits(bool inDoZeroClear)
-  {
-    mAllocated16BitsImageBuffer = new unsigned short[mBitmapBitsSize];
-    if (mAllocated16BitsImageBuffer == NULL)
-    {
-      printf("Error: Can't allocate mAllocated16BitsImageBuffer (CreateNewImageBuffer16Bits)\n");
-      ReleaseMutex(mMutexHandle);
-      return 0;
-    }
-    if (inDoZeroClear == true)
-      ZeroMemory(mAllocated16BitsImageBuffer, mBitmapBitsSize * sizeof(unsigned short));
-
-    return 1;
-  }
-
 
   bool  CreateMonoBitmapInfo(int inWidth, int inHeight, bool inIsBottomUp)
   {
