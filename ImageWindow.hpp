@@ -30,10 +30,9 @@
   \date     2023/09/23
   \brief    Single file image displaying utility class
 */
-#ifndef __IMAGE_WINDOW_H
-#define __IMAGE_WINDOW_H
+#ifndef IMAGE_WINDOW_H
+#define IMAGE_WINDOW_H
 
-#pragma warning(disable:4996)
 #ifdef _M_IX86
 #pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='x86' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #elif _M_X64
@@ -42,32 +41,38 @@
 
 // Includes --------------------------------------------------------------------
 #include <windows.h>
-#include <string.h>
-#include <process.h>
-#include <vector>
 #include <commctrl.h>
+#include <process.h>
+#include <string.h>
 #include <math.h>
+#include <string>
+#include <vector>
 
 // Macros ----------------------------------------------------------------------
-#define IMAGE_PALLET_SIZE_8BIT    256
-#define IMAGE_WINDOW_CLASS_NAME   TEXT("ImageWindow")
-#define IMAGE_WINDOW_DEFAULT_SIZE 160
-#define IMAGE_WINDOW_AUTO_POS     -100000
-#define IMAGE_WINDOW_DEFAULT_POS  20
-#define IMAGE_WINDOW_POS_SPACE    20
-#define IMAGE_FILE_NAME_BUF_LEN   256
-#define IMAGE_STR_BUF_SIZE        256
-#define DEFAULT_WINDOW_NAME       "Untitled"
-#define MONITOR_ENUM_MAX          32
-
-#define IMAGE_ZOOM_STEP           1
-#define MOUSE_WHEEL_STEP          60
+#define IMAGE_WINDOW_PALLET_SIZE_8BIT         256
+#define IMAGE_WINDOW_CLASS_NAME               TEXT("ImageWindow")
+#define IMAGE_WINDOW_DEFAULT_SIZE             160
+#define IMAGE_WINDOW_AUTO_POS                 -100000
+#define IMAGE_WINDOW_DEFAULT_POS              20
+#define IMAGE_WINDOW_POS_SPACE                20
+#define IMAGE_WINDOW_FILE_NAME_BUF_LEN        256
+#define IMAGE_WINDOW_STR_BUF_SIZE             256
+#define IMAGE_WINDOW_DEFAULT_NAME             "Untitled"
+#define IMAGE_WINDOW_MONITOR_ENUM_MAX         32
+#define IMAGE_WINDOW_ZOOM_STEP                1
+#define IMAGE_WINDOW_MOUSE_WHEEL_STEP         60
+#define IMAGE_WINDOW_FPS_DATA_NUM             25
+#define IMAGE_WINDOW_TOOLBAR_BUTTON_NUM       16
+#define IMAGE_WINDOW_ABOUT_TITLE              TEXT("About ImageWindow")
+#define IMAGE_WINDOW_ABOUT_STR                TEXT("mageWindow Ver.4.0.0\2023/09/23")
+#define IMAGE_WINDOW_VALUE_FONT               TEXT("Consolas")
+#define IMAGE_WINDOW_PROCESS_DPI_AWARE
 
 // Typedefs --------------------------------------------------------------------
 typedef struct
 {
   BITMAPINFOHEADER    Header;
-  RGBQUAD             RGBQuad[IMAGE_PALLET_SIZE_8BIT];
+  RGBQUAD             RGBQuad[IMAGE_WINDOW_PALLET_SIZE_8BIT];
 } ImageBitmapInfoMono8;
 
 // -----------------------------------------------------------------------------
@@ -77,9 +82,17 @@ class ImageWindow
 {
 public:
   // Enums ---------------------------------------------------------------------
+  enum ColorMap
+  {
+    COLORMAP_GRAYSCALE  = 0,
+    COLORMAP_JET,
+    COLORMAP_RAINBOW,
+    COLORMAP_SEPECTRUM,
+    COLORMAP_COOLWARM
+  };
   enum CursorMode
   {
-    CURSOR_MODE_SCROLL_TOOL = 1,
+    CURSOR_MODE_SCROLL_TOOL = 0,
     CURSOR_MODE_ZOOM_TOOL,
     CURSOR_MODE_INFO_TOOL
   };
@@ -96,48 +109,39 @@ public:
     static int  sPrevPosY   = 0;
     static int  sWindowNum  = 0;
 
-    mWindowState          = WINDOW_INIT_STATE;
-    mWindowTitle          = NULL;
+    mBitmapInfo           = NULL;
+    mBitmapInfoSize       = 0;
+    mBitmapBits           = NULL;
+    mBitmapBitsSize       = 0;
+    mAllocatedImageBuffer = NULL;
     mFileNameIndex        = 0;
+
     mWindowH              = NULL;
     mToolbarH             = NULL;
     mStatusbarH           = NULL;
     mRebarH               = NULL;
     mMenuH                = NULL;
+    mPopupMenuH           = NULL;
+    mThreadHandle         = NULL;
     mMutexHandle          = NULL;
     mEventHandle          = NULL;
-    mThreadHandle         = NULL;
-    mIsThreadRunning      = false;
-    mBitmapInfo           = NULL;
-    mBitmapInfoSize       = 0;
-    mBitmapBits           = NULL;
-    mBitmapBitsSize       = 0;
     mModuleH              = GetModuleHandle(NULL);
-    mCursorMode           = CURSOR_MODE_SCROLL_TOOL;
+    mIsHiDPI              = false;
 
-    mIsHiDPI = false;
-    mIsColorImage         = false;
-
+    mWindowTitle          = NULL;
     mIsMouseDragging      = false;
+    mCursorMode           = CURSOR_MODE_SCROLL_TOOL;
     mIsFullScreenMode     = false;
     mIsMenubarEnabled     = true;
     mIsToolbarEnabled     = true;
     mIsStatusbarEnabled   = true;
-    mIsPlotEnabled        = false;
-
     mFPSValue             = 0;
-
-    mAllocatedImageBuffer = NULL;
-
-    mDrawOverlayFunc      = NULL;
-    mOverlayFuncData      = NULL;
-
     mImageClickNum        = 0;
-    mLastImageClickX      = 0;
-    mLastImageClickY      = 0;
+
+    ::ZeroMemory(&mImageSize, sizeof(mImageSize));
 
     if (inPosX == IMAGE_WINDOW_AUTO_POS ||
-      inPosY == IMAGE_WINDOW_AUTO_POS)
+        inPosY == IMAGE_WINDOW_AUTO_POS)
     {
       if (sPrevPosX == 0 && sPrevPosY == 0)
       {
@@ -148,7 +152,6 @@ public:
       {
         mPosX = sPrevPosX + IMAGE_WINDOW_POS_SPACE;
         mPosY = sPrevPosY + IMAGE_WINDOW_POS_SPACE;
-
         if (mPosX >= GetSystemMetrics(SM_CXMAXIMIZED) - IMAGE_WINDOW_POS_SPACE)
           mPosX = IMAGE_WINDOW_DEFAULT_POS;
 
@@ -162,8 +165,9 @@ public:
 
     if (sWindowNum == 0)
     {
-      // TODO: Add an option to skip the following call
+#ifdef IMAGE_WINDOW_PROCESS_DPI_AWARE
       SetProcessDPIAware();
+#endif
     }
 
     if (RegisterWindowClass() == 0)
@@ -172,13 +176,12 @@ public:
       return;
     }
 
-    char  windowName[IMAGE_STR_BUF_SIZE];
+    char  windowName[IMAGE_WINDOW_STR_BUF_SIZE];
     if (inWindowName == NULL)
     {
-      sprintf_s(windowName, IMAGE_STR_BUF_SIZE, "%s%d", DEFAULT_WINDOW_NAME, sWindowNum);
+      sprintf_s(windowName, IMAGE_WINDOW_STR_BUF_SIZE, "%s%d", IMAGE_WINDOW_DEFAULT_NAME, sWindowNum);
       inWindowName = windowName;
     }
-
     size_t  bufSize = strlen(inWindowName) + 1;
     mWindowTitle = new char[bufSize];
     if (mWindowTitle == NULL)
@@ -193,28 +196,26 @@ public:
     {
       printf("Error: Can't create Mutex object\n");
       delete mWindowTitle;
+      mWindowTitle = NULL;
       return;
     }
-
     mEventHandle = CreateEvent(NULL, false, false, NULL);
     if (mEventHandle == NULL)
     {
       printf("Error: Can't create Event object\n");
       CloseHandle(mMutexHandle);
       delete mWindowTitle;
+      mWindowTitle = NULL;
       return;
     }
-
     sWindowNum++;
   }
-
   // ---------------------------------------------------------------------------
   // ~ImageWindow
   // ---------------------------------------------------------------------------
   virtual ~ImageWindow()
   {
-    if (mWindowState == WINDOW_OPEN_STATE)
-      PostMessage(mWindowH, WM_CLOSE, 0, 0);
+    CloseWindow();
 
     if (mThreadHandle != NULL)
     {
@@ -234,299 +235,13 @@ public:
     if (mWindowTitle != NULL)
       delete mWindowTitle;
   }
-
-  void  ShowWindow()
-  {
-    if (mWindowState != WINDOW_INIT_STATE)
-      return;
-
-    if (mIsThreadRunning == true)
-      return;
-
-    if (mThreadHandle != NULL)
-    {
-      ::CloseHandle(mThreadHandle);
-    }
-    //  Must use _beginthreadex instead of _beginthread, CreateThread
-    mIsThreadRunning = true;
-    mThreadHandle = (HANDLE )_beginthreadex(
-      NULL,
-      0,
-      ThreadFunc,
-      this,
-      0,
-      NULL);
-    if (mThreadHandle == NULL)
-    {
-      mIsThreadRunning = false;
-      printf("Error: Can't create process thread\n");
-      CloseHandle(mEventHandle);
-      CloseHandle(mMutexHandle);
-      delete mWindowTitle;
-      return;
-    }
-
-    WaitForSingleObject(mEventHandle, INFINITE);
-  }
-
-  void  CloseWindow()
-  {
-    if (mWindowState == WINDOW_OPEN_STATE)
-      PostMessage(mWindowH, WM_CLOSE, 0, 0);
-  }
-
-  bool  IsWindowOpen()
-  {
-    if (mWindowState == WINDOW_OPEN_STATE)
-      return true;
-
-    return false;
-  }
-
-  bool  IsWindowClosed()
-  {
-    if (mWindowState == WINDOW_CLOSED_STATE)
-      return true;
-
-    return false;
-  }
-
-  bool  WaitForWindowClose(DWORD inTimeout = INFINITE)
-  {
-    if (mThreadHandle == NULL)
-      return false;
-
-    if (WaitForSingleObject(mThreadHandle, inTimeout) == WAIT_OBJECT_0)
-      return true;
-  return false;
-  }
-
-  static bool WaitForWindowCloseMulti(ImageWindow *inWindowArray[], int inArrayLen,
-                      bool inWaitAll = false, DWORD inTimeout = INFINITE)
-  {
-    std::vector< HANDLE > handles;
-
-    for (int i = 0; i < inArrayLen; i++)
-      if (inWindowArray[i]->mThreadHandle != NULL)
-        handles.push_back(inWindowArray[i]->mThreadHandle);
-
-    if (WaitForMultipleObjects((DWORD )handles.size(), &(handles[0]), inWaitAll, inTimeout) == WAIT_TIMEOUT)
-      return false;
-
-    return true;
-  }
-
-  void  SetColormap(int inIndex = 0)
-  {
-    if (mBitmapInfo == NULL)
-      return;
-
-    if (mBitmapInfo->biBitCount != 8)
-      return;
-
-    ImageBitmapInfoMono8  *bitmapInfo = (ImageBitmapInfoMono8 *)mBitmapInfo;
-
-    if (inIndex == 0)
-    {
-      for (int i = 0; i < 255; i++)
-      {
-        bitmapInfo->RGBQuad[i].rgbBlue        = i;
-        bitmapInfo->RGBQuad[i].rgbGreen       = i;
-        bitmapInfo->RGBQuad[i].rgbRed         = i;
-        bitmapInfo->RGBQuad[i].rgbReserved    = 0;
-      }
-      bitmapInfo->RGBQuad[0].rgbRed           = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
-      bitmapInfo->RGBQuad[1].rgbRed           = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
-      return;
-    }
-    if (inIndex == 1)
-    {
-      for (int i = 0; i < 64; i++)
-      {
-        bitmapInfo->RGBQuad[i      ].rgbRed   = 0;
-        bitmapInfo->RGBQuad[i      ].rgbGreen = i * 4;
-        bitmapInfo->RGBQuad[i      ].rgbBlue  = 255;
-
-        bitmapInfo->RGBQuad[i +  64].rgbRed   = 0;
-        bitmapInfo->RGBQuad[i +  64].rgbGreen = 255;
-        bitmapInfo->RGBQuad[i +  64].rgbBlue  = (255 - i * 4);
-
-        bitmapInfo->RGBQuad[i + 128].rgbRed   = i * 4;
-        bitmapInfo->RGBQuad[i + 128].rgbGreen = 255;
-        bitmapInfo->RGBQuad[i + 128].rgbBlue  = 0;
-
-        bitmapInfo->RGBQuad[i + 192].rgbRed   = 255;
-        bitmapInfo->RGBQuad[i + 192].rgbGreen = (255 - i * 4);
-        bitmapInfo->RGBQuad[i + 192].rgbBlue  = 0;
-      }
-      bitmapInfo->RGBQuad[0].rgbRed           = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
-      bitmapInfo->RGBQuad[1].rgbRed           = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
-      return;
-    }
-    if (inIndex == 2)
-    {
-      const unsigned char tableR[256] = {
-        60, 61, 62, 63, 64, 66, 67, 68, 69, 70, 71, 73, 74, 75, 76, 77, 79,
-        80, 81, 82, 84, 85, 86, 87, 89, 90, 91, 93, 94, 95, 96, 98, 99, 100,
-        102, 103, 104, 106, 107, 108, 110, 111, 112, 114, 115, 116, 118, 119,
-        120, 122, 123, 124, 126, 127, 129, 130, 131, 133, 134, 135, 137, 138,
-        140, 141, 142, 144, 145, 147, 148, 149, 151, 152, 153, 155, 156, 158,
-        159, 160, 162, 163, 164, 166, 167, 168, 170, 171, 172, 174, 175, 176,
-        178, 179, 180, 182, 183, 184, 185, 187, 188, 189, 190, 192, 193, 194,
-        195, 197, 198, 199, 200, 201, 203, 204, 205, 206, 207, 208, 209, 210,
-        211, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225,
-        226, 227, 228, 229, 230, 231, 232, 232, 233, 234, 235, 236, 236, 237,
-        238, 238, 239, 240, 240, 241, 241, 242, 242, 243, 243, 244, 244, 245,
-        245, 245, 245, 246, 246, 246, 246, 247, 247, 247, 247, 247, 247, 247,
-        247, 247, 247, 247, 247, 247, 247, 247, 247, 247, 246, 246, 246, 246,
-        245, 245, 245, 244, 244, 244, 243, 243, 242, 242, 241, 241, 240, 240,
-        239, 238, 238, 237, 236, 236, 235, 234, 233, 233, 232, 231, 230, 229,
-        228, 227, 227, 226, 225, 224, 223, 222, 221, 220, 218, 217, 216, 215,
-        214, 213, 212, 210, 209, 208, 207, 205, 204, 203, 202, 200, 199, 198,
-        196, 195, 193, 192, 190, 189, 188, 186, 185, 183, 181, 180
-      };
-      const unsigned char tableG[256] = {
-        78, 80, 81, 83, 85, 87, 88, 90, 92, 93, 95, 97, 99, 100, 102, 104,
-        105, 107, 109, 110, 112, 114, 115, 117, 119, 120, 122, 123, 125,
-        127, 128, 130, 131, 133, 135, 136, 138, 139, 141, 142, 144, 145,
-        147, 148, 150, 151, 153, 154, 156, 157, 158, 160, 161, 163, 164,
-        165, 167, 168, 169, 171, 172, 173, 174, 176, 177, 178, 179, 181,
-        182, 183, 184, 185, 186, 187, 188, 190, 191, 192, 193, 194, 195,
-        196, 197, 198, 199, 199, 200, 201, 202, 203, 204, 205, 205, 206,
-        207, 208, 208, 209, 210, 210, 211, 212, 212, 213, 213, 214, 214,
-        215, 215, 216, 216, 217, 217, 217, 218, 218, 219, 219, 219, 219,
-        220, 220, 220, 220, 220, 220, 221, 221, 220, 220, 219, 219, 218,
-        218, 217, 216, 216, 215, 215, 214, 213, 212, 212, 211, 210, 209,
-        209, 208, 207, 206, 205, 204, 203, 202, 201, 200, 199, 198, 197,
-        196, 195, 194, 193, 192, 191, 190, 188, 187, 186, 185, 184, 182,
-        181, 180, 178, 177, 176, 174, 173, 172, 170, 169, 167, 166, 164,
-        163, 161, 160, 158, 157, 155, 154, 152, 151, 149, 147, 146, 144,
-        142, 141, 139, 137, 136, 134, 132, 130, 129, 127, 125, 123, 121,
-        120, 118, 116, 114, 112, 110, 108, 106, 104, 102, 100, 98, 96,
-        94, 92, 90, 88, 86, 84, 82, 80, 78, 75, 73, 71, 69, 66, 64, 62,
-        59, 57, 54, 51, 49, 46, 43, 40, 37, 34, 30, 26, 22, 17, 11, 4
-      };
-      const unsigned char tableB[256] = {
-        194, 195, 197, 198, 200, 201, 203, 204, 206, 207, 209, 210, 211, 213,
-        214, 215, 217, 218, 219, 221, 222, 223, 224, 225, 226, 228, 229, 230,
-        231, 232, 233, 234, 235, 236, 237, 238, 239, 239, 240, 241, 242, 243,
-        243, 244, 245, 246, 246, 247, 247, 248, 249, 249, 250, 250, 251, 251,
-        252, 252, 252, 253, 253, 253, 254, 254, 254, 254, 254, 255, 255, 255,
-        255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 254, 254, 254,
-        253, 253, 253, 253, 252, 252, 251, 251, 251, 250, 250, 249, 248, 248,
-        247, 247, 246, 245, 245, 244, 243, 243, 242, 241, 240, 239, 238, 238,
-        237, 236, 235, 234, 233, 232, 231, 230, 229, 228, 227, 225, 224, 223,
-        222, 221, 219, 218, 216, 215, 214, 212, 211, 209, 208, 206, 205, 203,
-        202, 200, 199, 197, 196, 194, 193, 191, 190, 188, 187, 185, 184, 182,
-        181, 179, 178, 176, 174, 173, 171, 170, 168, 167, 165, 163, 162, 160,
-        159, 157, 156, 154, 152, 151, 149, 148, 146, 145, 143, 141, 140, 138,
-        137, 135, 134, 132, 131, 129, 127, 126, 124, 123, 121, 120, 118, 117,
-        115, 114, 112, 111, 109, 108, 106, 105, 103, 102, 100, 99, 97, 96, 95,
-        93, 92, 90, 89, 88, 86, 85, 83, 82, 81, 79, 78, 77, 75, 74, 73, 71, 70,
-        69, 67, 66, 65, 64, 62, 61, 60, 59, 57, 56, 55, 54, 53, 52, 50, 49, 48,
-        47, 46, 45, 44, 43, 41, 40, 39, 38
-      };
-      for (int i = 0; i < 256; i++)
-      {
-        bitmapInfo->RGBQuad[i].rgbRed         = tableR[i];
-        bitmapInfo->RGBQuad[i].rgbGreen       = tableG[i];
-        bitmapInfo->RGBQuad[i].rgbBlue        = tableB[i];
-      }
-      bitmapInfo->RGBQuad[0].rgbRed           = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
-      bitmapInfo->RGBQuad[1].rgbRed           = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
-      return;
-    }
-    if (inIndex == 3)
-    {
-      for (int j = 0; j < 4; j++)
-      {
-        for (int i = 0; i < 64; i++)
-        {
-          bitmapInfo->RGBQuad[i+j*64].rgbRed    = i * 3 + 64;
-          bitmapInfo->RGBQuad[i+j*64].rgbGreen  = i * 3 + 64;
-          bitmapInfo->RGBQuad[i+j*64].rgbBlue   = i * 3 + 64;
-        }
-      }
-      bitmapInfo->RGBQuad[0].rgbRed           = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
-      bitmapInfo->RGBQuad[1].rgbRed           = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
-      return;
-    }
-    if (inIndex == 4)
-    {
-      for (int j = 0; j < 8; j++)
-      {
-        for (int i = 0; i < 32; i++)
-        {
-          bitmapInfo->RGBQuad[i+j*32].rgbRed    = i * 7 + 32;
-          bitmapInfo->RGBQuad[i+j*32].rgbGreen  = i * 7 + 32;
-          bitmapInfo->RGBQuad[i+j*32].rgbBlue   = i * 7 + 32;
-        }
-      }
-      bitmapInfo->RGBQuad[0].rgbRed           = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
-      bitmapInfo->RGBQuad[1].rgbRed           = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
-      return;
-    }
-    if (inIndex == 5)
-    {
-      for (int j = 0; j < 16; j++)
-      {
-        for (int i = 0; i < 16; i++)
-        {
-          bitmapInfo->RGBQuad[i+j*16].rgbRed    = i * 15 + 16;
-          bitmapInfo->RGBQuad[i+j*16].rgbGreen  = i * 15 + 16;
-          bitmapInfo->RGBQuad[i+j*16].rgbBlue   = i * 15 + 16;
-        }
-      }
-      bitmapInfo->RGBQuad[0].rgbRed           = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
-      bitmapInfo->RGBQuad[1].rgbRed           = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
-      return;
-    }
-    if (inIndex == 6)
-    {
-      for (int j = 0; j < 32; j++)
-      {
-        for (int i = 0; i < 8; i++)
-        {
-          bitmapInfo->RGBQuad[i+j* 8].rgbRed    = i * 32;
-          bitmapInfo->RGBQuad[i+j* 8].rgbGreen  = i * 32;
-          bitmapInfo->RGBQuad[i+j* 8].rgbBlue   = i * 32;
-        }
-      }
-      bitmapInfo->RGBQuad[0].rgbRed           = 0;
-      bitmapInfo->RGBQuad[0].rgbGreen         = 0;
-      bitmapInfo->RGBQuad[0].rgbBlue          = 0;
-      bitmapInfo->RGBQuad[1].rgbRed           = 255;
-      bitmapInfo->RGBQuad[1].rgbGreen         = 255;
-      bitmapInfo->RGBQuad[1].rgbBlue          = 255;
-      return;
-    }
-  }
-
-  void  SetImageBufferPtr(int inWidth, int inHeight, unsigned char *inImagePtr, bool inIsColor, bool inIsBottomUp = false)
+  // ---------------------------------------------------------------------------
+  // Buffer related member functions -------------------------------------------
+  // ---------------------------------------------------------------------------
+  // AllocateBuffer
+  // ---------------------------------------------------------------------------
+  void  AllocateBuffer(int inWidth, int inHeight,
+                       bool inIsColor, bool inIsBottomUp = false)
   {
     DWORD result;
     bool  doUpdateSize;
@@ -534,10 +249,31 @@ public:
     result = WaitForSingleObject(mMutexHandle, INFINITE);
     if (result != WAIT_OBJECT_0)
     {
-      printf("Error: WaitForSingleObject failed (SetMonoImageBufferPtr)\n");
+      printf("Error: WaitForSingleObject failed (AllocateBuffer)\n");
       return;
     }
+    doUpdateSize = PrepareBuffer(inWidth, inHeight, inIsColor, inIsBottomUp);
+    ReleaseMutex(mMutexHandle);
 
+    if (doUpdateSize)
+      UpdateWindowSize();
+  }
+  // ---------------------------------------------------------------------------
+  // SetExternalBuffer
+  // ---------------------------------------------------------------------------
+  void  SetExternalBuffer(int inWidth, int inHeight,
+                          unsigned char *inExternalBuffer,
+                          bool inIsColor, bool inIsBottomUp = false)
+  {
+    DWORD result;
+    bool  doUpdateSize;
+
+    result = WaitForSingleObject(mMutexHandle, INFINITE);
+    if (result != WAIT_OBJECT_0)
+    {
+      printf("Error: WaitForSingleObject failed (SetExternalBuffer)\n");
+      return;
+    }
     doUpdateSize = CreateBitmapInfo(inWidth, inHeight, inIsColor, inIsBottomUp);
 
     if (mAllocatedImageBuffer != NULL)
@@ -546,17 +282,20 @@ public:
       mAllocatedImageBuffer = NULL;
     }
 
-    mBitmapBits = inImagePtr;
+    mBitmapBits = inExternalBuffer;
     ReleaseMutex(mMutexHandle);
-    UpdateFPS();
 
+    UpdateFPS();
     if (doUpdateSize)
       UpdateWindowSize();
     else
-      UpdateImage();
+      UpdateWindow();
   }
-
-  void  AllocateImageBuffer(int inWidth, int inHeight, bool inIsColor, bool inIsBottomUp = false)
+  // ---------------------------------------------------------------------------
+  // CopyImage
+  // ---------------------------------------------------------------------------
+  void  CopyImage(int inWidth, int inHeight, const unsigned char *inImage,
+                  bool inIsColor, bool inIsBottomUp = false)
   {
     DWORD result;
     bool  doUpdateSize;
@@ -567,59 +306,300 @@ public:
       printf("Error: WaitForSingleObject failed (AllocateMonoImageBuffer)\n");
       return;
     }
-
-    doUpdateSize = PrepareImageBuffers(inWidth, inHeight, inIsColor, inIsBottomUp);
-
-    ReleaseMutex(mMutexHandle);
-
-    if (doUpdateSize)
-      UpdateWindowSize();
-  }
-
-  void  CopyIntoImageBuffer(int inWidth, int inHeight, const unsigned char *inImage, bool inIsColor, bool inIsBottomUp = false)
-  {
-    DWORD result;
-    bool  doUpdateSize;
-
-    result = WaitForSingleObject(mMutexHandle, INFINITE);
-    if (result != WAIT_OBJECT_0)
-    {
-      printf("Error: WaitForSingleObject failed (AllocateMonoImageBuffer)\n");
-      return;
-    }
-
-    doUpdateSize = PrepareImageBuffers(inWidth, inHeight, inIsColor, inIsBottomUp);
-    CopyMemory(GetImageBufferPtr(), inImage, GetImageBufferSize());
+    doUpdateSize = PrepareBuffer(inWidth, inHeight, inIsColor, inIsBottomUp);
+    ::CopyMemory(GetBufferPtr(), inImage, GetBufferSize());
 
     ReleaseMutex(mMutexHandle);
+
     UpdateFPS();
-
     if (doUpdateSize)
       UpdateWindowSize();
     else
-      UpdateImage();
+      UpdateWindow();
   }
-
-  void  UpdateImage()
+  // ---------------------------------------------------------------------------
+  // UpdateWindow
+  // ---------------------------------------------------------------------------
+  void  UpdateWindow()
   {
     if (IsWindowOpen() == false)
       return;
 
     UpdateFPS();
     UpdateMousePixelReadout();
-    UpdateImageDisp();
+    UpdateWindowDisp();
   }
+  // ---------------------------------------------------------------------------
+  // GetBufferPtr
+  // ---------------------------------------------------------------------------
+  unsigned char *GetBufferPtr()
+  {
+    return mBitmapBits;
+  }
+  // ---------------------------------------------------------------------------
+  // GetBufferSize
+  // ---------------------------------------------------------------------------
+  size_t  GetBufferSize()
+  {
+    return mBitmapBitsSize;
+  }
+  // ---------------------------------------------------------------------------
+  // GetPixelPtr
+  // ---------------------------------------------------------------------------
+  unsigned char *GetPixelPtr(int inX, int inY)
+  {
+    if (mBitmapBits == NULL)
+      return NULL;
+    if (inX < 0 || inX >= mImageSize.cx ||
+      inY < 0 || inY >= mImageSize.cy)
+      return NULL;
 
+    if (mBitmapInfo->biBitCount == 8)
+      return &(mBitmapBits[mImageSize.cx * inY + inX]);
+
+    int lineSize = mImageSize.cx * 3;
+    if (lineSize % 4 != 0)
+      lineSize = lineSize + (4 - (lineSize % 4));
+
+    if (mBitmapInfo->biHeight < 0)  // Topdown-up DIB
+      return &(mBitmapBits[lineSize * inY+ (inX * 3)]);
+
+    return &(mBitmapBits[lineSize * (mImageSize.cy - inY - 1)+ (inX * 3)]);
+  }
+  // ---------------------------------------------------------------------------
+  // GetWidth
+  // ---------------------------------------------------------------------------
+  int GetWidth()
+  {
+    return mImageSize.cx;
+  }
+  // ---------------------------------------------------------------------------
+  // GetHeight
+  // ---------------------------------------------------------------------------
+  int GetHeight()
+  {
+    return mImageSize.cy;
+  }
+  // ---------------------------------------------------------------------------
+  // IsBottomUp
+  // ---------------------------------------------------------------------------
+  bool IsBottomUp()
+  {
+    if (mBitmapInfo == NULL)
+      return false;
+    if (mBitmapInfo->biHeight > 0)
+      return true;
+    return false;
+  }
+  // ---------------------------------------------------------------------------
+  // IsColor
+  // ---------------------------------------------------------------------------
+  bool IsColor()
+  {
+    if (mBitmapInfo == NULL)
+      return false;
+    if (mBitmapInfo->biBitCount == 24)
+      return true;
+    return false;
+  }
+  // ---------------------------------------------------------------------------
+  // ReadBitmapFile
+  // ---------------------------------------------------------------------------
+  bool  ReadBitmapFile(const char *inFileName)
+  {
+    FILE  *fp;
+    BITMAPFILEHEADER  fileHeader;
+
+    if (fopen_s(&fp, inFileName, "rb") != 0)
+    {
+      printf("Error: Can't open file %s (ReadBitmapFile)\n", inFileName);
+      return false;
+    }
+
+    if (fread(&fileHeader, sizeof(BITMAPFILEHEADER), 1, fp) != 1)
+    {
+      printf("Error: fread failed (ReadBitmapFile)\n");
+      fclose(fp);
+      return false;
+    }
+
+    DWORD result = WaitForSingleObject(mMutexHandle, INFINITE);
+    if (result != WAIT_OBJECT_0)
+    {
+      printf("Error: WaitForSingleObject failed (ReadBitmapFile)\n");
+      fclose(fp);
+      return false;
+    }
+
+    if (mBitmapInfo != NULL)
+    {
+      delete mBitmapInfo;
+      if (mAllocatedImageBuffer != NULL)
+        delete mAllocatedImageBuffer;
+    }
+
+    mBitmapInfoSize = (size_t )fileHeader.bfOffBits - sizeof(BITMAPFILEHEADER);
+    mBitmapInfo = (BITMAPINFOHEADER *)(new unsigned char[mBitmapInfoSize]);
+    if (mBitmapInfo == NULL)
+    {
+      printf("Error: Can't allocate mBitmapInfo (ReadBitmapFile)\n");
+      ReleaseMutex(mMutexHandle);
+      fclose(fp);
+      return false;
+    }
+
+    mBitmapBitsSize = (size_t )fileHeader.bfSize - (size_t )fileHeader.bfOffBits;
+    mAllocatedImageBuffer = new unsigned char[mBitmapBitsSize];
+    if (mAllocatedImageBuffer == NULL)
+    {
+      printf("Error: Can't allocate mBitmapBits (ReadBitmapFile)\n");
+      delete mBitmapInfo;
+      mBitmapInfo = NULL;
+      ReleaseMutex(mMutexHandle);
+      fclose(fp);
+      return false;
+    }
+    mBitmapBits = mAllocatedImageBuffer;
+
+    if (fread(mBitmapInfo, mBitmapInfoSize, 1, fp) != 1)
+    {
+      printf("Error: fread failed (ReadBitmapFile)\n");
+      ReleaseMutex(mMutexHandle);
+      fclose(fp);
+      return false;
+    }
+    if (fread(mBitmapBits, mBitmapBitsSize, 1, fp) != 1)
+    {
+      printf("Error: fread failed (ReadBitmapFile)\n");
+      ReleaseMutex(mMutexHandle);
+      fclose(fp);
+      return false;
+    }
+    fclose(fp);
+    ReleaseMutex(mMutexHandle);
+
+    UpdateWindowSize();
+    UpdateWindowDisp();
+    return true;
+  }
+  // ---------------------------------------------------------------------------
+  // WriteBitmapFile
+  // ---------------------------------------------------------------------------
+  // inIsUnicode = true will be used only when
+  //  - The VC project setting is unicode
+  //  - Need to pass the unicode string from WIN32 API (wide string version)
+  bool  WriteBitmapFile(const char *inFileName = NULL, bool inIsUnicode = false)
+  {
+    if (mBitmapInfo == NULL || mBitmapBits == NULL)
+    {
+      printf("Error: mBitmapInfo == NULL || mBitmapBits == NULL SaveBitmap()\n");
+      return false;
+    }
+
+    unsigned char *buf = CreateDIB(true);
+    FILE  *fp = NULL;
+    BITMAPFILEHEADER  fileHeader;
+    ::ZeroMemory(&fileHeader, sizeof(fileHeader));
+    fileHeader.bfType = 'MB';
+    fileHeader.bfSize = (DWORD )(sizeof(BITMAPFILEHEADER) + mBitmapInfoSize + mBitmapBitsSize);
+    fileHeader.bfReserved1 = 0;
+    fileHeader.bfReserved2 = 0;
+    fileHeader.bfOffBits = (DWORD )(sizeof(BITMAPFILEHEADER) + mBitmapInfoSize);
+
+    if (inIsUnicode == false)
+    {
+      char  fileName[IMAGE_WINDOW_FILE_NAME_BUF_LEN];
+      const char  *fileNamePtr;
+      if (inFileName != NULL)
+      {
+        fileNamePtr = inFileName;
+      }
+      else
+      {
+        sprintf_s(fileName, IMAGE_WINDOW_FILE_NAME_BUF_LEN, "%s%d.bmp", mWindowTitle, mFileNameIndex);
+        fileNamePtr = fileName;
+        mFileNameIndex++;
+        printf("Save %s\n", fileName);
+      }
+      if (fopen_s(&fp, fileNamePtr, "wb") != 0)
+      {
+        printf("Error: Can't create file %s (WriteBitmapFile)\n", fileNamePtr);
+        ReleaseMutex(mMutexHandle);
+        return false;
+      }
+    }
+    else
+    {
+      if (inFileName == NULL)
+      {
+        printf("Error: Can't create file (WriteBitmapFile(inIsUnicode = true))\n");
+        ReleaseMutex(mMutexHandle);
+        return false;
+      }
+      if (_wfopen_s(&fp, (wchar_t *)inFileName, L"wb") != 0)
+      {
+        printf("Error: Can't create file (WriteBitmapFile(inIsUnicode = true))\n");
+        ReleaseMutex(mMutexHandle);
+        return false;
+      }
+    }
+    if (fp == NULL)
+    {
+      printf("Error: fp == NUL (WriteBitmapFile)\n");
+      ReleaseMutex(mMutexHandle);
+      return false;
+    }
+
+    if (fwrite(&fileHeader, sizeof(BITMAPFILEHEADER), 1, fp) != 1)
+    {
+      printf("Error: Can't write file (WriteBitmapFile)\n");
+      ReleaseMutex(mMutexHandle);
+      fclose(fp);
+      return false;
+    }
+    if (fwrite(buf, mBitmapInfoSize + mBitmapBitsSize, 1, fp) != 1)
+    {
+      printf("Error: Can't write file (WriteBitmapFile)\n");
+      ReleaseMutex(mMutexHandle);
+      fclose(fp);
+      return false;
+    }
+    fclose(fp);
+    delete buf;
+
+    return true;
+  }
+  // ---------------------------------------------------------------------------
+  // CopyToClipboard
+  // ---------------------------------------------------------------------------
+  bool  CopyToClipboard()
+  {
+    if (mBitmapInfo == NULL || mBitmapBits == NULL)
+    {
+      printf("Error: mBitmapInfo == NULL || mBitmapBits == NULL CopyToClipboard()\n");
+      return false;
+    }
+
+    unsigned char *buf = CreateDIB(true);
+    OpenClipboard(mWindowH);
+    EmptyClipboard();
+    SetClipboardData(CF_DIB, buf);
+    CloseClipboard();
+    delete buf;
+
+    return true;
+  }
+  // ---------------------------------------------------------------------------
+  // DumpBitmapInfo
+  // ---------------------------------------------------------------------------
   void  DumpBitmapInfo()
   {
     printf("[Dump BitmapInfo : %s]\n", mWindowTitle);
-
     if (mBitmapInfo == NULL)
     {
       printf("BitmapInfo is NULL \n");
       return;
     }
-
     printf(" biSize: %d\n", mBitmapInfo->biSize);
     printf(" biWidth: %d\n", mBitmapInfo->biWidth);
     if (mBitmapInfo->biHeight < 0)
@@ -635,145 +615,164 @@ public:
     printf(" biClrUsed: %d\n", mBitmapInfo->biClrUsed);
     printf(" biClrImportant: %d\n", mBitmapInfo->biClrImportant);
     printf("\n");
-
-    printf(" mBitmapInfoSize =  %d bytes\n", mBitmapInfoSize);
-    printf(" RGBQUAD number  =  %d\n", (mBitmapInfoSize - mBitmapInfo->biSize) / (unsigned int )sizeof(RGBQUAD));
-    printf(" mBitmapBitsSize =  %d bytes\n", mBitmapBitsSize);
+    printf(" mBitmapInfoSize =  %d bytes\n", (int )mBitmapInfoSize);
+    printf(" RGBQUAD number  =  %d\n", (int )((mBitmapInfoSize - mBitmapInfo->biSize) / (unsigned int )sizeof(RGBQUAD)));
+    printf(" mBitmapBitsSize =  %zu bytes\n", mBitmapBitsSize);
   }
-
-  unsigned char *CreateDIB(bool inForceConvertToBottomUp = true)
+  // ---------------------------------------------------------------------------
+  // Label & Text related member functions -------------------------------------
+  // ---------------------------------------------------------------------------
+  // AddLabel
+  // ---------------------------------------------------------------------------
+  void  AddLabel(int inLeft, int inTop, int inRight, int inBottom,
+                 const char *inLabelStr,
+                 unsigned char inR = 0, unsigned char inG = 0, unsigned char inB = 0)
   {
-    if (mBitmapInfo == NULL)
-      return NULL;
-
-    unsigned char *buf = new unsigned char[mBitmapInfoSize + mBitmapBitsSize];
-    CopyMemory(buf, mBitmapInfo, mBitmapInfoSize);
-    CopyMemory(&(buf[mBitmapInfoSize]), mBitmapBits, mBitmapBitsSize);
-
-    if (inForceConvertToBottomUp == true)
-      if (mBitmapInfo->biHeight < 0)
-        FlipBitmap((BITMAPINFOHEADER *)buf, &(buf[mBitmapInfoSize]));
-
-    return buf;
+    LabelItem item = {{inLeft, inTop, inRight, inBottom},
+                      inLabelStr,
+                      RGB(inR, inG, inB)};
+    mLabelList.push_back(item);
   }
-
-  void  FlipImageBuffer()
+  // ---------------------------------------------------------------------------
+  // ClearLabels
+  // ---------------------------------------------------------------------------
+  void  ClearLabels()
   {
-    FlipBitmap(mBitmapInfo, mBitmapBits);
+    mLabelList.clear();
   }
-
-  bool  OpenBitmapFile(const char *inFileName)
+  // ---------------------------------------------------------------------------
+  // ApplyColorMapToLabels
+  // ---------------------------------------------------------------------------
+  void  ApplyColorMapToLabels(ColorMap inColorMap = COLORMAP_RAINBOW)
   {
-    FILE  *fp;
-    BITMAPFILEHEADER  fileHeader;
-
-    if (fopen_s(&fp, inFileName, "rb") != 0)
+    int num = (int )mLabelList.size();
+    if (num == 0)
+      return;
+    const unsigned char *map = GetColorMap(inColorMap);
+    int div = num;
+    if (div < 9)
+      div = 9;
+    if (div > 257)
+      div = 257;
+    int step = 256 / (div-1);
+    for (int i = 0; i < num; i++)
     {
-      printf("Error: Can't open file %s (OpenBitmapFile)\n", inFileName);
+      int idx;
+      if (i < 256)
+        idx = i * step;
+      else
+        idx = i % 256;
+      if (idx > 255)
+        idx = 255;
+      idx = 255 - idx;
+      mLabelList[i].color = RGB( map[idx * 3 + 0],
+                                 map[idx * 3 + 1],
+                                 map[idx * 3 + 2]);
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // SetOverlayText
+  // ---------------------------------------------------------------------------
+  void  SetOverlayText(const char *inText)
+  {
+    if (inText == NULL)
+    {
+      mOverlayText.clear();
+      mOverlayTextLineList.clear();
+      return;
+    }
+    mOverlayText = inText;
+    mOverlayTextLineList.clear();
+    int i = 0;
+    TextLine line = {0, 0};
+    while (inText[i] != 0)
+    {
+      if (inText[i] != '\n')
+      {
+        line.len++;
+      }
+      else
+      {
+        mOverlayTextLineList.push_back(line);
+        line.start = i + 1;
+        line.len = 0;
+      }
+      i++;
+    }
+    if (line.len != 0)
+      mOverlayTextLineList.push_back(line);
+  }
+  // ---------------------------------------------------------------------------
+  // Window related member functions -------------------------------------------
+  // ---------------------------------------------------------------------------
+  // ShowWindow
+  // ---------------------------------------------------------------------------
+  bool  ShowWindow()
+  {
+    if (IsWindowOpen())
+      return false;
+
+    if (mThreadHandle != NULL)
+    {
+      ::CloseHandle(mThreadHandle);
+    }
+    mThreadHandle = (HANDLE )_beginthreadex(  //  NOTE: need to use _beginthreadex instead of _beginthread, CreateThread
+                                NULL,
+                                0,
+                                ThreadFunc,
+                                this,
+                                0,
+                                NULL);
+    if (mThreadHandle == NULL)
+    {
+      printf("Error: Can't create process thread\n");
       return false;
     }
-
-    if (fread(&fileHeader, sizeof(BITMAPFILEHEADER), 1, fp) != 1)
+    WaitForSingleObject(mEventHandle, INFINITE);
+    if (IsWindowOpen() == false)
     {
-      printf("Error: fread failed (OpenBitmapFile)\n");
-      fclose(fp);
+      printf("Error: Can't create window\n");
       return false;
     }
-
-
-    DWORD result = WaitForSingleObject(mMutexHandle, INFINITE);
-    if (result != WAIT_OBJECT_0)
-    {
-      printf("Error: WaitForSingleObject failed (OpenBitmapFile)\n");
-      fclose(fp);
-      return false;
-    }
-
-    if (mBitmapInfo != NULL)
-    {
-      delete mBitmapInfo;
-      if (mAllocatedImageBuffer != NULL)
-        delete mAllocatedImageBuffer;
-    }
-
-    mBitmapInfoSize = fileHeader.bfOffBits - sizeof(BITMAPFILEHEADER);
-    mBitmapInfo = (BITMAPINFOHEADER *)(new unsigned char[mBitmapInfoSize]);
-    if (mBitmapInfo == NULL)
-    {
-      printf("Error: Can't allocate mBitmapInfo (OpenBitmapFile)\n");
-      ReleaseMutex(mMutexHandle);
-      fclose(fp);
-      return false;
-    }
-
-    mBitmapBitsSize = fileHeader.bfSize - fileHeader.bfOffBits;
-    mAllocatedImageBuffer = new unsigned char[mBitmapBitsSize];
-    if (mAllocatedImageBuffer == NULL)
-    {
-      printf("Error: Can't allocate mBitmapBits (OpenBitmapFile)\n");
-      delete mBitmapInfo;
-      mBitmapInfo = NULL;
-      ReleaseMutex(mMutexHandle);
-      fclose(fp);
-      return false;
-    }
-    mBitmapBits = mAllocatedImageBuffer;
-
-    if (fread(mBitmapInfo, mBitmapInfoSize, 1, fp) != 1)
-    {
-      printf("Error: fread failed (OpenBitmapFile)\n");
-      ReleaseMutex(mMutexHandle);
-      fclose(fp);
-      return false;
-    }
-    if (fread(mBitmapBits, mBitmapBitsSize, 1, fp) != 1)
-    {
-      printf("Error: fread failed (OpenBitmapFile)\n");
-      ReleaseMutex(mMutexHandle);
-      fclose(fp);
-      return false;
-    }
-    fclose(fp);
-
-    //if (mBitmapInfo->biHeight > 0)
-    //  FlipImageBuffer();
-
-    ReleaseMutex(mMutexHandle);
-
-    UpdateWindowSize();
-    UpdateImageDisp();
-
-    printf("Bitmap File opened: %s\n", inFileName);
-
     return true;
   }
-
-  bool  CopyToClipboard()
+  // ---------------------------------------------------------------------------
+  // CloseWindow
+  // ---------------------------------------------------------------------------
+  void  CloseWindow()
   {
-    if (mBitmapInfo == NULL || mBitmapBits == NULL)
-    {
-      printf("Error: mBitmapInfo == NULL || mBitmapBits == NULL CopyToClipboard()\n");
-      return false;
-    }
-
-    unsigned char *buf = CreateDIB(true);
-
-    OpenClipboard(mWindowH);
-    EmptyClipboard();
-    SetClipboardData(CF_DIB, buf);
-    CloseClipboard();
-
-    delete buf;
-
-    return true;
+    if (IsWindowOpen())
+      PostMessage(mWindowH, WM_CLOSE, 0, 0);
+    WaitForWindowClose();
   }
-
+  // ---------------------------------------------------------------------------
+  // IsWindowOpen
+  // ---------------------------------------------------------------------------
+  bool  IsWindowOpen()
+  {
+    if (WaitForWindowClose(0) == false)
+      return true;
+    return false;
+  }
+  // ---------------------------------------------------------------------------
+  // WaitForWindowClose
+  // ---------------------------------------------------------------------------
+  bool  WaitForWindowClose(DWORD inTimeout = INFINITE)
+  {
+    if (mThreadHandle == NULL)
+      return true;
+    if (WaitForSingleObject(mThreadHandle, inTimeout) == WAIT_OBJECT_0)
+      return true;
+  return false;
+  }
+  // ---------------------------------------------------------------------------
+  // SaveAsBitmapFile
+  // ---------------------------------------------------------------------------
   bool  SaveAsBitmapFile()
   {
     const int BUF_LEN = 512;
     OPENFILENAME  fileName;
     TCHAR buf[BUF_LEN] = TEXT("Untitled.bmp");
-
     ZeroMemory(&fileName, sizeof(fileName));
     fileName.lStructSize = sizeof(fileName);
     fileName.hwndOwner = mWindowH;
@@ -782,194 +781,67 @@ public:
     fileName.lpstrFile = buf;
     fileName.nMaxFile = BUF_LEN;
     fileName.lpstrTitle = TEXT("Save Image As");
-    //fileName.Flags = OFN_EXTENSIONDIFFERENT;
     fileName.lpstrDefExt = TEXT("bmp");
-
     if (GetSaveFileName(&fileName) == 0)
       return false;
-
-    return SaveBitmapFile((const char *)fileName.lpstrFile, true);
+#ifdef _UNICODE
+    return WriteBitmapFile((const char *)fileName.lpstrFile, true);
+#else
+    return WriteBitmapFile((const char*)fileName.lpstrFile, false);
+#endif
   }
-
-  bool  SaveBitmapFile(const char *inFileName = NULL, bool inIsUnicode = false)
-  {
-    if (mBitmapInfo == NULL || mBitmapBits == NULL)
-    {
-      printf("Error: mBitmapInfo == NULL || mBitmapBits == NULL SaveBitmap()\n");
-      return false;
-    }
-
-//DumpBitmapInfo();
-
-    unsigned char *buf = CreateDIB(true);
-
-    FILE  *fp;
-    char  fileName[IMAGE_FILE_NAME_BUF_LEN];
-
-    BITMAPFILEHEADER  fileHeader;
-    fileHeader.bfType = 'MB';
-    fileHeader.bfSize = sizeof(BITMAPFILEHEADER) + mBitmapInfoSize + mBitmapBitsSize;
-    fileHeader.bfReserved1 = 0;
-    fileHeader.bfReserved2 = 0;
-    fileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + mBitmapInfoSize;
-
-    if (inIsUnicode == false)
-    {
-      if (inFileName != NULL)
-      {
-        sprintf_s(fileName, IMAGE_FILE_NAME_BUF_LEN, "%s", inFileName);
-      }
-      else
-      {
-        sprintf_s(fileName, IMAGE_FILE_NAME_BUF_LEN, "%s%d.bmp", mWindowTitle, mFileNameIndex);
-        mFileNameIndex++;
-      }
-
-      if (fopen_s(&fp, fileName, "wb") != 0)
-      {
-        printf("Error: Can't create file %s (SaveBitmapFile)\n", fileName);
-        ReleaseMutex(mMutexHandle);
-        return false;
-      }
-    }
-    else
-    {
-      if (_wfopen_s(&fp, (wchar_t *)inFileName, L"wb") != 0)
-      {
-        printf("Error: Can't create file %s (SaveBitmapFile)\n", fileName);
-        ReleaseMutex(mMutexHandle);
-        return false;
-      }
-    }
-
-    if (fwrite(&fileHeader, sizeof(BITMAPFILEHEADER), 1, fp) != 1)
-    {
-      printf("Error: Can't write file (SaveBitmapFile)\n");
-      ReleaseMutex(mMutexHandle);
-      fclose(fp);
-      return false;
-    }
-    if (fwrite(buf, mBitmapInfoSize + mBitmapBitsSize, 1, fp) != 1)
-    {
-      printf("Error: Can't write file (SaveBitmapFile)\n");
-      ReleaseMutex(mMutexHandle);
-      fclose(fp);
-      return false;
-    }
-    fclose(fp);
-
-//    if (inIsUnicode == false)
-//      printf("Bitmap File saved: %s\n", fileName);
-//    else
-//      wprintf(TEXT("Bitmap File saved: %s\n"), inFileName);
-
-    delete buf;
-
-    return true;
-  }
-
-  int GetImageWidth()
-  {
-    if (mBitmapInfo == NULL)
-      return 0;
-    return mBitmapInfo->biWidth;
-  }
-
-  int GetImageHeight()
-  {
-    if (mBitmapInfo == NULL)
-      return 0;
-    return abs(mBitmapInfo->biHeight);
-  }
-
-  RECT  GetImageClientRect()
-  {
-    return mImageClientRect;
-  }
-
-  bool  IsBottomUpImage()
-  {
-    if (mBitmapInfo == NULL)
-      return false;
-
-    if (mBitmapInfo->biHeight > 0)
-      return true;
-
-    return false;
-  }
-
-  int GetImageBitCount()
-  {
-    if (mBitmapInfo == NULL)
-      return 0;
-    return mBitmapInfo->biBitCount;
-  }
-
-  unsigned char *GetImageBufferPtr()
-  {
-    return mBitmapBits;
-  }
-
-  unsigned int  GetImageBufferSize()
-  {
-    return mBitmapBitsSize;
-  }
-
+  // ---------------------------------------------------------------------------
+  // GetDispScale
+  // ---------------------------------------------------------------------------
   double  GetDispScale()
   {
     return mImageDispScale;
   }
-
+  // ---------------------------------------------------------------------------
+  // SetDispScale
+  // ---------------------------------------------------------------------------
   void  SetDispScale(double inScale)
   {
-    double  prevImageDispScale = mImageDispScale;
-
-    if (inScale <= 1.0)
-      inScale = 1.0;
+    if (inScale <= 0.01)
+      inScale = 0.01;
     mImageDispScale = inScale;
     CheckImageDispOffset();
     UpdateStatusBar();
 
-    UpdateImageDispDispRect();
+    UpdateDispRect();
     UpdateMouseCursor();
   }
-
-  double  CalcWindowSizeFitScale()
+  // ---------------------------------------------------------------------------
+  // ZoomIn
+  // ---------------------------------------------------------------------------
+  void  ZoomIn()
   {
-    double  imageRatio = (double )mImageSize.cy / (double )mImageSize.cx;
-    double width = mImageClientRect.right - mImageClientRect.left;
-    double height = mImageClientRect.bottom - mImageClientRect.top;
-    double  dispRatio = (double )mImageClientRect.bottom / width;
-    double  scale;
-
-    if (imageRatio > dispRatio)
-      scale = height / (double )mImageSize.cy;
-    else
-      scale = width / (double )mImageSize.cx;
-
-    return scale * 100.0;
+    SetDispScale(CalcImageScale(IMAGE_WINDOW_ZOOM_STEP));
   }
-
+  // ---------------------------------------------------------------------------
+  // ZoomOut
+  // ---------------------------------------------------------------------------
+  void  ZoomOut()
+  {
+    SetDispScale(CalcImageScale(-IMAGE_WINDOW_ZOOM_STEP));
+  }
+  // ---------------------------------------------------------------------------
+  // FitDispScaleToWindowSize
+  // ---------------------------------------------------------------------------
   void  FitDispScaleToWindowSize()
   {
     SetDispScale(CalcWindowSizeFitScale());
   }
-
-  void  ZoomIn()
-  {
-    SetDispScale(CalcImageScale(IMAGE_ZOOM_STEP));
-  }
-
-  void  ZoomOut()
-  {
-    SetDispScale(CalcImageScale(-IMAGE_ZOOM_STEP));
-  }
-
+  // ---------------------------------------------------------------------------
+  // IsFullScreenMode
+  // ---------------------------------------------------------------------------
   bool  IsFullScreenMode()
   {
     return mIsFullScreenMode;
   }
-
+  // ---------------------------------------------------------------------------
+  // EnableFullScreenMode
+  // ---------------------------------------------------------------------------
   void  EnableFullScreenMode(bool inFitDispScaleToWindowSize = true, int inMonitorIndex = -1)
   {
     if (mIsFullScreenMode)
@@ -986,6 +858,7 @@ public:
     {
       case -1:
         POINT pos;
+        ::ZeroMemory(&pos, sizeof(pos));
         for (int i = 0; i < mMonitorNum; i++)
         {
           pos.x = mLastWindowRect.left;
@@ -1029,11 +902,13 @@ public:
     DisableStatusbar();
     CheckMenuItem(mMenuH, IDM_FULL_SCREEN, MF_CHECKED);
     mIsFullScreenMode = true;
-    UpdateImageDispDispRect();
+    UpdateDispRect();
     if (inFitDispScaleToWindowSize)
       FitDispScaleToWindowSize();
   }
-
+  // ---------------------------------------------------------------------------
+  // DisableFullScreenMode
+  // ---------------------------------------------------------------------------
   void  DisableFullScreenMode(bool inFitDispScaleToWindowSize = true)
   {
     if (!mIsFullScreenMode)
@@ -1051,16 +926,20 @@ public:
     EnableStatusbar();
     CheckMenuItem(mMenuH, IDM_FULL_SCREEN, MF_UNCHECKED);
     mIsFullScreenMode = false;
-    UpdateImageDispDispRect();
+    UpdateDispRect();
     if (inFitDispScaleToWindowSize)
       FitDispScaleToWindowSize();
   }
-
+  // ---------------------------------------------------------------------------
+  // IsMenubarEnabled
+  // ---------------------------------------------------------------------------
   bool  IsMenubarEnabled()
   {
     return mIsMenubarEnabled;
   }
-
+  // ---------------------------------------------------------------------------
+  // EnableMenubar
+  // ---------------------------------------------------------------------------
   void  EnableMenubar()
   {
     if (mIsMenubarEnabled)
@@ -1070,7 +949,9 @@ public:
     CheckMenuItem(mMenuH, IDM_MENUBAR, MF_CHECKED);
     mIsMenubarEnabled = true;
   }
-
+  // ---------------------------------------------------------------------------
+  // DisableMenubar
+  // ---------------------------------------------------------------------------
   void  DisableMenubar()
   {
     if (!mIsMenubarEnabled)
@@ -1080,12 +961,16 @@ public:
     CheckMenuItem(mMenuH, IDM_MENUBAR, MF_UNCHECKED);
     mIsMenubarEnabled = false;
   }
-
+  // ---------------------------------------------------------------------------
+  // IsToolbarEnabled
+  // ---------------------------------------------------------------------------
   bool  IsToolbarEnabled()
   {
     return mIsToolbarEnabled;
   }
-
+  // ---------------------------------------------------------------------------
+  // EnableToolbar
+  // ---------------------------------------------------------------------------
   void  EnableToolbar()
   {
     if (mIsToolbarEnabled)
@@ -1094,27 +979,32 @@ public:
     ::ShowWindow(mRebarH, SW_SHOW);
     CheckMenuItem(mMenuH, IDM_TOOLBAR, MF_CHECKED);
     mIsToolbarEnabled = true;
-    UpdateImageDispDispRect();
-    UpdateImageDisp(true);
+    UpdateDispRect();
+    UpdateWindowDisp(true);
   }
-
+  // ---------------------------------------------------------------------------
+  // DisableToolbar
+  // ---------------------------------------------------------------------------
   void  DisableToolbar()
   {
     if (!mIsToolbarEnabled)
       return;
-
     ::ShowWindow(mRebarH, SW_HIDE);
     CheckMenuItem(mMenuH, IDM_TOOLBAR, MF_UNCHECKED);
     mIsToolbarEnabled = false;
-    UpdateImageDispDispRect();
-    UpdateImageDisp(true);
+    UpdateDispRect();
+    UpdateWindowDisp(true);
   }
-
+  // ---------------------------------------------------------------------------
+  // IsStatusbarEnabled
+  // ---------------------------------------------------------------------------
   bool  IsStatusbarEnabled()
   {
     return mIsStatusbarEnabled;
   }
-
+  // ---------------------------------------------------------------------------
+  // EnableStatusbar
+  // ---------------------------------------------------------------------------
   void  EnableStatusbar()
   {
     if (mIsStatusbarEnabled)
@@ -1124,7 +1014,9 @@ public:
     CheckMenuItem(mMenuH, IDM_STATUSBAR, MF_CHECKED);
     mIsStatusbarEnabled = true;
   }
-
+  // ---------------------------------------------------------------------------
+  // DisableStatusbar
+  // ---------------------------------------------------------------------------
   void  DisableStatusbar()
   {
     if (!mIsStatusbarEnabled)
@@ -1134,31 +1026,333 @@ public:
     CheckMenuItem(mMenuH, IDM_STATUSBAR, MF_UNCHECKED);
     mIsStatusbarEnabled = false;
   }
-
-  bool  IsPlotEnabled()
+  // ---------------------------------------------------------------------------
+  // WaitForWindowCloseMulti
+  // ---------------------------------------------------------------------------
+  static bool WaitForWindowCloseMulti(ImageWindow *inWindowArray[], int inArrayLen,
+                      bool inWaitAll = false, DWORD inTimeout = INFINITE)
   {
-    return mIsPlotEnabled;
+    std::vector< HANDLE > handles;
+
+    for (int i = 0; i < inArrayLen; i++)
+      if (inWindowArray[i]->mThreadHandle != NULL)
+        handles.push_back(inWindowArray[i]->mThreadHandle);
+
+    if (WaitForMultipleObjects((DWORD )handles.size(), &(handles[0]), inWaitAll, inTimeout) == WAIT_TIMEOUT)
+      return false;
+
+    return true;
   }
-
-  void  EnablePlot()
+  // ---------------------------------------------------------------------------
+  // SetColorMap
+  // ---------------------------------------------------------------------------
+  void  SetColorMap(ColorMap inColorMap)
   {
-    if (mIsPlotEnabled)
+    if (mBitmapInfo == NULL)
+      return;
+    if (mBitmapInfo->biBitCount != 8)
       return;
 
-    CheckMenuItem(mMenuH, IDM_PLOT, MF_CHECKED);
-    mIsPlotEnabled = true;
+    ImageBitmapInfoMono8  *bitmapInfo = (ImageBitmapInfoMono8 *)mBitmapInfo;
+    const unsigned char *map = GetColorMap(inColorMap);
+    for (int i = 0; i < 256; i++)
+    {
+      bitmapInfo->RGBQuad[i].rgbRed         = map[i*3+0];
+      bitmapInfo->RGBQuad[i].rgbGreen       = map[i*3+1];
+      bitmapInfo->RGBQuad[i].rgbBlue        = map[i*3+2];
+      bitmapInfo->RGBQuad[i].rgbReserved    = 0;
+    }
   }
 
-  void  DisablePlot()
+private:
+  enum
   {
-    if (!mIsPlotEnabled)
-      return;
+    IDM_SAVE  = 100,
+    IDM_SAVE_AS,
+    IDM_PROPERTY,
+    IDM_CLOSE,
+    IDM_UNDO,
+    IDM_CUT,
+    IDM_COPY,
+    IDM_PASTE,
+    IDM_MENUBAR,
+    IDM_TOOLBAR,
+    IDM_STATUSBAR,
+    IDM_ZOOMPANE,
+    IDM_FULL_SCREEN,
+    IDM_FPS,
+    IDM_FREEZE,
+    IDM_SCROLL_TOOL,
+    IDM_ZOOM_TOOL,
+    IDM_INFO_TOOL,
+    IDM_ZOOM_IN,
+    IDM_ZOOM_OUT,
+    IDM_ACTUAL_SIZE,
+    IDM_FIT_WINDOW,
+    IDM_ADJUST_WINDOW_SIZE,
+    IDM_CASCADE_WINDOW,
+    IDM_TILE_WINDOW,
+    IDM_ABOUT
+  };
 
-    CheckMenuItem(mMenuH, IDM_PLOT, MF_UNCHECKED);
-    mIsPlotEnabled = false;
+  typedef struct
+  {
+    RECT        rect;
+    std::string label;
+    COLORREF    color;
+  } LabelItem;
+  typedef struct
+  {
+    int start;
+    int len;
+  } TextLine;
+
+  std::vector<LabelItem>  mLabelList;
+  std::string mOverlayText;
+  std::vector<TextLine>  mOverlayTextLineList;
+
+  BITMAPINFOHEADER  *mBitmapInfo;
+  size_t            mBitmapInfoSize;
+  unsigned char     *mBitmapBits;
+  size_t            mBitmapBitsSize;
+  unsigned char     *mAllocatedImageBuffer;
+  int               mFileNameIndex;
+
+  HWND              mWindowH;
+  HWND              mToolbarH;
+  HWND              mStatusbarH;
+  HWND              mRebarH;
+  HMENU             mMenuH;
+  HMENU             mPopupMenuH;
+  HANDLE            mThreadHandle;
+  HANDLE            mMutexHandle;
+  HANDLE            mEventHandle;
+  HINSTANCE         mModuleH;
+  bool              mIsHiDPI;
+
+  HCURSOR           mArrowCursor;
+  HCURSOR           mScrollCursor;
+  HCURSOR           mZoomPlusCursor;
+  HCURSOR           mZoomMinusCursor;
+  HCURSOR           mInfoCursor;
+  HICON             mAppIconH;
+  HFONT             mPixValueFont;
+  HFONT             mLabelFont;
+
+  char              *mWindowTitle;
+  bool              mIsMouseDragging;
+  int               mCursorMode;
+  bool              mIsFullScreenMode;
+  bool              mIsMenubarEnabled;
+  bool              mIsToolbarEnabled;
+  bool              mIsStatusbarEnabled;
+  int               mImageClickNum;
+
+  int               mPosX, mPosY;
+  SIZE              mImageSize;
+  RECT              mImageDispRect;
+  RECT              mImageClientRect;
+  SIZE              mImageDispSize;
+  SIZE              mImageDispOffset;
+  double            mImageDispScale;
+  double            mImagePrevScale;
+  SIZE              mImageDispOffsetStart;
+  RECT              mLastWindowRect;
+  int               mMouseDownMode;
+  POINT             mMouseDownPos;
+
+  double            mFPSValue;
+  double            mFPSData[IMAGE_WINDOW_FPS_DATA_NUM];
+  int               mFPSDataCount;
+  unsigned __int64  mFrequency;
+  unsigned __int64  mPrevCount;
+
+  int               mMonitorNum;
+  RECT              mMonitorRect[IMAGE_WINDOW_MONITOR_ENUM_MAX];
+
+  // ---------------------------------------------------------------------------
+  // Buffer related member functions -------------------------------------------
+  // ---------------------------------------------------------------------------
+  // PrepareBuffer
+  // ---------------------------------------------------------------------------
+  bool  PrepareBuffer(int inWidth, int inHeight,
+                      bool inIsColor, bool inIsBottomUp)
+  {
+    bool  doUpdateSize = CreateBitmapInfo(inWidth, inHeight, inIsColor, inIsBottomUp);
+
+    if (mAllocatedImageBuffer != NULL && doUpdateSize != false)
+    {
+      delete mAllocatedImageBuffer;
+      mAllocatedImageBuffer = NULL;
+    }
+
+    if (mAllocatedImageBuffer == NULL)
+    {
+      mAllocatedImageBuffer = new unsigned char[mBitmapBitsSize];
+      mBitmapBits = mAllocatedImageBuffer;
+      if (mAllocatedImageBuffer == NULL)
+      {
+        printf("Error: Can't allocate mBitmapBits (PrepareBuffer)\n");
+        return false;
+      }
+      ZeroMemory(mAllocatedImageBuffer, mBitmapBitsSize);
+    }
+    return doUpdateSize;
   }
+  // ---------------------------------------------------------------------------
+  // CreateBitmapInfo
+  // ---------------------------------------------------------------------------
+  bool  CreateBitmapInfo(int inWidth, int inHeight,
+                         bool inIsColor, bool inIsBottomUp)
+  {
+    if (inIsColor)
+      return CreateColorBitmapInfo(inWidth, inHeight, inIsBottomUp);
+    else
+      return CreateMonoBitmapInfo(inWidth, inHeight, inIsBottomUp);
+  }
+  // ---------------------------------------------------------------------------
+  // CreateColorBitmapInfo
+  // ---------------------------------------------------------------------------
+  bool  CreateColorBitmapInfo(int inWidth, int inHeight, bool inIsBottomUp)
+  {
+    bool  doCreateBitmapInfo = false;
 
+    if (inIsBottomUp == true)
+      inHeight = abs(inHeight);
+    else
+      inHeight = -1 * abs(inHeight);
 
+    if (mBitmapInfo == NULL)
+    {
+      doCreateBitmapInfo = true;
+    }
+    else
+    {
+      if (mBitmapInfo->biBitCount   != 24 ||
+        mBitmapInfo->biWidth        != inWidth ||
+        mBitmapInfo->biHeight       != inHeight)
+      {
+        doCreateBitmapInfo = true;
+      }
+    }
+
+    if (doCreateBitmapInfo)
+    {
+      if (mBitmapInfo != NULL)
+        delete mBitmapInfo;
+
+      mBitmapInfoSize = sizeof(BITMAPINFOHEADER);
+      mBitmapInfo = (BITMAPINFOHEADER *)(new unsigned char[mBitmapInfoSize]);
+      if (mBitmapInfo == NULL)
+      {
+        printf("Error: Can't allocate mBitmapInfo (CreateColorBitmapInfo)\n");
+        return false;
+      }
+      mBitmapInfo->biSize           = sizeof(BITMAPINFOHEADER);
+      mBitmapInfo->biWidth          = inWidth;
+      mBitmapInfo->biHeight         = inHeight;
+      mBitmapInfo->biPlanes         = 1;
+      mBitmapInfo->biBitCount       = 24;
+      mBitmapInfo->biCompression    = BI_RGB;
+      mBitmapInfo->biSizeImage      = 0;
+      mBitmapInfo->biXPelsPerMeter  = 100;
+      mBitmapInfo->biYPelsPerMeter  = 100;
+      mBitmapInfo->biClrUsed        = 0;
+      mBitmapInfo->biClrImportant   = 0;
+
+      mBitmapBitsSize = (size_t)abs(inWidth * inHeight * 3);
+    }
+
+    return doCreateBitmapInfo;
+  }
+  // ---------------------------------------------------------------------------
+  // CreateMonoBitmapInfo
+  // ---------------------------------------------------------------------------
+  bool  CreateMonoBitmapInfo(int inWidth, int inHeight, bool inIsBottomUp)
+  {
+    bool  doCreateBitmapInfo = false;
+
+    if (inIsBottomUp == true)
+      inHeight = abs(inHeight);
+    else
+      inHeight = -1 * abs(inHeight);
+
+    if (mBitmapInfo == NULL)
+    {
+      doCreateBitmapInfo = true;
+    }
+    else
+    {
+      if (mBitmapInfo->biBitCount   != 8 ||
+        mBitmapInfo->biWidth        != inWidth ||
+        mBitmapInfo->biHeight       != inHeight)
+      {
+        doCreateBitmapInfo = true;
+      }
+    }
+
+    if (doCreateBitmapInfo)
+    {
+      if (mBitmapInfo != NULL)
+        delete mBitmapInfo;
+
+      mBitmapInfoSize = sizeof(ImageBitmapInfoMono8);
+      mBitmapInfo = (BITMAPINFOHEADER *)(new unsigned char[mBitmapInfoSize]);
+      if (mBitmapInfo == NULL)
+      {
+        printf("Error: Can't allocate mBitmapInfo (CreateMonoBitmapInfo)\n");
+        return false;
+      }
+      ImageBitmapInfoMono8  *bitmapInfo = (ImageBitmapInfoMono8 *)mBitmapInfo;
+      bitmapInfo->Header.biSize     = sizeof(BITMAPINFOHEADER);
+      bitmapInfo->Header.biWidth      = inWidth;
+      bitmapInfo->Header.biHeight     = inHeight;
+      bitmapInfo->Header.biPlanes     = 1;
+      bitmapInfo->Header.biBitCount   = 8;
+      bitmapInfo->Header.biCompression  = BI_RGB;
+      bitmapInfo->Header.biSizeImage    = 0;
+      bitmapInfo->Header.biXPelsPerMeter  = 100;
+      bitmapInfo->Header.biYPelsPerMeter  = 100;
+      bitmapInfo->Header.biClrUsed    = IMAGE_WINDOW_PALLET_SIZE_8BIT;
+      bitmapInfo->Header.biClrImportant = IMAGE_WINDOW_PALLET_SIZE_8BIT;
+
+      for (int i = 0; i < IMAGE_WINDOW_PALLET_SIZE_8BIT; i++)
+      {
+        bitmapInfo->RGBQuad[i].rgbBlue      = i;
+        bitmapInfo->RGBQuad[i].rgbGreen     = i;
+        bitmapInfo->RGBQuad[i].rgbRed       = i;
+        bitmapInfo->RGBQuad[i].rgbReserved  = 0;
+      }
+
+      mBitmapBitsSize = (size_t )abs(inWidth * inHeight);
+
+      mImageSize.cx = mBitmapInfo->biWidth;
+      mImageSize.cy = abs(mBitmapInfo->biHeight);
+    }
+
+    return doCreateBitmapInfo;
+  }
+  // ---------------------------------------------------------------------------
+  // CreateDIB
+  // ---------------------------------------------------------------------------
+  unsigned char *CreateDIB(bool inForceConvertToBottomUp = true)
+  {
+    if (mBitmapInfo == NULL)
+      return NULL;
+
+    unsigned char *buf = new unsigned char[mBitmapInfoSize + mBitmapBitsSize];
+    CopyMemory(buf, mBitmapInfo, mBitmapInfoSize);
+    CopyMemory(&(buf[mBitmapInfoSize]), mBitmapBits, mBitmapBitsSize);
+
+    if (inForceConvertToBottomUp == true)
+      if (mBitmapInfo->biHeight < 0)
+        FlipBitmap((BITMAPINFOHEADER *)buf, &(buf[mBitmapInfoSize]));
+
+    return buf;
+  }
+  // ---------------------------------------------------------------------------
+  // FlipBitmap (static)
+  // ---------------------------------------------------------------------------
   static void FlipBitmap(BITMAPINFOHEADER *inBitmapInfo, unsigned char *inBitmapBits)
   {
     if (inBitmapInfo == NULL)
@@ -1205,1007 +1399,19 @@ public:
 
     inBitmapInfo->biHeight *= -1;
   }
-
-  bool  IsScrollable()
-  {
-      int imageWidth = (int )(mImageSize.cx * mImageDispScale / 100.0);
-      int imageHeight = (int )(mImageSize.cy * mImageDispScale / 100.0);
-
-      if (imageWidth > mImageDispSize.cx)
-        return true;
-      if (imageHeight > mImageDispSize.cy)
-        return true;
-
-      return false;
-  }
-
-  void  SetDrawOverlayFunc(void (*inFunc)(ImageWindow *, HDC, void *), void *inFuncData)
-  {
-    mDrawOverlayFunc = inFunc;
-    mOverlayFuncData = inFuncData;
-  }
-
-
-int         mImageClickNum;
-int         mLastImageClickX;
-int         mLastImageClickY;
-
-//  HWND      GetWindowHandle() { return mWindowH; }
-  const BITMAPINFOHEADER  *GetBitmapInfo() { return mBitmapInfo; }
-
-protected:
-  enum
-  {
-    IDM_SAVE  = 100,
-    IDM_SAVE_AS,
-    IDM_PROPERTY,
-    IDM_CLOSE,
-    IDM_UNDO,
-    IDM_CUT,
-    IDM_COPY,
-    IDM_PASTE,
-    IDM_MENUBAR,
-    IDM_TOOLBAR,
-    IDM_STATUSBAR,
-    IDM_ZOOMPANE,
-    IDM_FULL_SCREEN,
-    IDM_FPS,
-    IDM_PLOT,
-    IDM_FREEZE,
-    IDM_SCROLL_TOOL,
-    IDM_ZOOM_TOOL,
-    IDM_INFO_TOOL,
-    IDM_ZOOM_IN,
-    IDM_ZOOM_OUT,
-    IDM_ACTUAL_SIZE,
-    IDM_FIT_WINDOW,
-    IDM_ADJUST_WINDOW_SIZE,
-    IDM_CASCADE_WINDOW,
-    IDM_TILE_WINDOW,
-    IDM_ABOUT
-  };
-
-  virtual void  OnCommand(WPARAM inWParam, LPARAM inLParam)
-  {
-    switch (LOWORD(inWParam))
-    {
-      case IDM_SAVE:
-        SaveBitmapFile();
-        break;
-      case IDM_SAVE_AS:
-        SaveAsBitmapFile();
-        break;
-      case IDM_PROPERTY:
-        DumpBitmapInfo();
-        break;
-      case IDM_CLOSE:
-        PostQuitMessage(0);
-        break;
-      case IDM_COPY:
-        CopyToClipboard();
-        break;
-      case IDM_MENUBAR:
-        if (IsMenubarEnabled())
-          DisableMenubar();
-        else
-          EnableMenubar();
-        break;
-      case IDM_TOOLBAR:
-        if (IsToolbarEnabled())
-          DisableToolbar();
-        else
-          EnableToolbar();
-        break;
-      case IDM_STATUSBAR:
-        if (IsStatusbarEnabled())
-          DisableStatusbar();
-        else
-          EnableStatusbar();
-        break;
-      case IDM_ZOOMPANE:
-        break;
-      case IDM_FULL_SCREEN:
-        if (IsFullScreenMode())
-          DisableFullScreenMode();
-        else
-          EnableFullScreenMode();
-        break;
-      case IDM_FPS:
-        break;
-      case IDM_PLOT:
-        if (IsPlotEnabled())
-          DisablePlot();
-        else
-          EnablePlot();
-        break;
-      case IDM_FREEZE:
-        break;
-      case IDM_SCROLL_TOOL:
-        SetCursorMode(CURSOR_MODE_SCROLL_TOOL);
-        break;
-      case IDM_ZOOM_TOOL:
-        SetCursorMode(CURSOR_MODE_ZOOM_TOOL);
-        break;
-      case IDM_INFO_TOOL:
-        SetCursorMode(CURSOR_MODE_INFO_TOOL);
-        break;
-      case IDM_ZOOM_IN:
-        ZoomIn();
-        if (GetKeyState(VK_CONTROL) < 0)
-          UpdateWindowSize(true);
-        break;
-      case IDM_ZOOM_OUT:
-        ZoomOut();
-        if (GetKeyState(VK_CONTROL) < 0)
-          UpdateWindowSize(true);
-        break;
-      case IDM_ACTUAL_SIZE:
-        if (GetKeyState(VK_CONTROL) < 0 || IsFullScreenMode() == true)
-          SetDispScale(100);
-        else
-        {
-          UpdateWindowSize();
-          UpdateImageDisp();
-        }
-        break;
-      case IDM_FIT_WINDOW:
-        FitDispScaleToWindowSize();
-        break;
-      case IDM_ADJUST_WINDOW_SIZE:
-        if (IsFullScreenMode() == false)
-          UpdateWindowSize(true);
-        break;
-      case IDM_CASCADE_WINDOW:
-        break;
-      case IDM_TILE_WINDOW:
-        break;
-      case IDM_ABOUT:
-        ::MessageBox(mWindowH,
-          TEXT("ImageWindow Ver.1.0.0\nDairoku Sekiguchi (2007/10/13)"),
-          TEXT("About ImageWindow"), MB_OK);
-        break;
-    }
-  }
-
-  virtual void  OnKeyDown(WPARAM ininWParam, LPARAM inLParam)
-  {
-    switch (ininWParam)
-    {
-      case VK_SHIFT:
-        UpdateMouseCursor();
-        break;
-    }
-  }
-
-  virtual void  OnKeyUp(WPARAM ininWParam, LPARAM inLParam)
-  {
-    switch (ininWParam)
-    {
-      case VK_SHIFT:
-        UpdateMouseCursor();
-        break;
-    }
-  }
-
-  virtual void  OnChar(WPARAM ininWParam, LPARAM inLParam)
-  {
-    switch (ininWParam)
-    {
-      case VK_ESCAPE:
-        if (IsFullScreenMode())
-          DisableFullScreenMode();
-        break;
-      case 's':
-      case 'S':
-        SaveBitmapFile();
-        break;
-      case 'd':
-      case 'D':
-        DumpBitmapInfo();
-        break;
-      case 'f':
-      case 'F':
-        if (IsFullScreenMode())
-          DisableFullScreenMode();
-        else
-          EnableFullScreenMode();
-        break;
-      case '+':
-        ZoomIn();
-        break;
-      case '-':
-        ZoomOut();
-        break;
-      case '=':
-        SetDispScale(100);
-        break;
-    }
-  }
-
-  virtual void  OnLButtonDown(UINT inMessage, WPARAM inWParam, LPARAM inLParam)
-  {
-    POINT localPos;
-    int x, y;
-    double  scale;
-
-    mMouseDownPos.x = (short )LOWORD(inLParam);
-    mMouseDownPos.y = (short )HIWORD(inLParam);
-
-    if ((inWParam & MK_CONTROL) == 0)
-      mMouseDownMode = mCursorMode;
-    else
-      mMouseDownMode = CURSOR_MODE_SCROLL_TOOL;
-
-    switch (mMouseDownMode)
-    {
-      case CURSOR_MODE_SCROLL_TOOL:
-        mIsMouseDragging = true;
-        mImageDispOffsetStart = mImageDispOffset;
-        SetCapture(mWindowH);
-        break;
-      case CURSOR_MODE_ZOOM_TOOL:
-        localPos = mMouseDownPos;
-        localPos.x -= mImageDispRect.left;
-        localPos.y -= mImageDispRect.top;
-        scale = mImageDispScale / 100.0;
-        x = (int )(localPos.x / scale);
-        y = (int )(localPos.y / scale);
-        x += mImageDispOffset.cx;
-        y += mImageDispOffset.cy;
-
-        if ((inWParam & MK_SHIFT) == 0)
-          scale = CalcImageScale(IMAGE_ZOOM_STEP);
-        else
-          scale = CalcImageScale(-IMAGE_ZOOM_STEP);
-
-        mImageDispOffset.cx = x - (int )(localPos.x / (scale / 100.0));
-        mImageDispOffset.cy = y - (int )(localPos.y / (scale / 100.0));
-        SetDispScale(scale);
-        break;
-      case CURSOR_MODE_INFO_TOOL:
-        localPos = mMouseDownPos;
-        localPos.x -= mImageDispRect.left;
-        localPos.y -= mImageDispRect.top;
-        scale = mImageDispScale / 100.0;
-        x = (int )(localPos.x / scale);
-        y = (int )(localPos.y / scale);
-        x += mImageDispOffset.cx;
-        y += mImageDispOffset.cy;
-
-        if (x <0 || y < 0 ||
-          x >= GetImageWidth() || y >= GetImageHeight())
-          break;
-
-        mImageClickNum++;
-        mLastImageClickX = x;
-        mLastImageClickY = y;
-
-        int v = mBitmapBits[mImageSize.cx * y + x];
-        char  buf[256];
-
-        _itoa(v, buf, 2);
-        printf("%d: X:%.4d Y:%.4d VALUE:%.3d %.2X %s\n", mImageClickNum, x, y, v, v, buf);
-        break;
-    }
-  }
-
-  virtual void  OnMButtonDown(UINT inMessage, WPARAM inWParam, LPARAM inLParam)
-  {
-    POINT localPos;
-    int x, y;
-    double  scale;
-
-    localPos.x = (short )LOWORD(inLParam);
-    localPos.y = (short )HIWORD(inLParam);
-
-    localPos.x -= mImageDispRect.left;
-    localPos.y -= mImageDispRect.top;
-    scale = mImageDispScale / 100.0;
-    x = (int )(localPos.x / scale);
-    y = (int )(localPos.y / scale);
-    x += mImageDispOffset.cx;
-    y += mImageDispOffset.cy;
-
-    if ((inWParam & (MK_SHIFT + MK_CONTROL)) == 0)
-      scale = 100;
-    else
-    {
-      if ((inWParam & MK_SHIFT) == 0)
-        scale = 3000;
-      else
-        scale = CalcWindowSizeFitScale();
-    }
-
-    if (mImageDispScale == scale)
-      scale = mImagePrevScale;
-
-    mImagePrevScale = mImageDispScale;
-
-    mImageDispOffset.cx = x - (int )(localPos.x / (scale / 100.0));
-    mImageDispOffset.cy = y - (int )(localPos.y / (scale / 100.0));
-    SetDispScale(scale);
-  }
-
-  virtual void  OnMouseMove(WPARAM inWParam, LPARAM inLParam)
-  {
-    if (mIsMouseDragging == false)
-      return;
-
-    POINT currentPos;
-    double  scale = mImageDispScale / 100.0;
-
-    currentPos.x = (short )LOWORD(inLParam);
-    currentPos.y = (short )HIWORD(inLParam);
-
-    switch (mMouseDownMode)
-    {
-      case CURSOR_MODE_SCROLL_TOOL:
-        mImageDispOffset = mImageDispOffsetStart;
-        mImageDispOffset.cx -= (int )((currentPos.x - mMouseDownPos.x) / scale);
-        mImageDispOffset.cy -= (int )((currentPos.y - mMouseDownPos.y) / scale);
-        CheckImageDispOffset();
-        UpdateImageDisp();
-        break;
-      case CURSOR_MODE_ZOOM_TOOL:
-        break;
-      case CURSOR_MODE_INFO_TOOL:
-        break;
-    }
-  }
-
-  virtual void  OnLButtonUp(WPARAM inWParam, LPARAM inLParam)
-  {
-    switch (mMouseDownMode)
-    {
-      case CURSOR_MODE_SCROLL_TOOL:
-        mIsMouseDragging = false;
-        ReleaseCapture();
-        break;
-      case CURSOR_MODE_ZOOM_TOOL:
-        break;
-      case CURSOR_MODE_INFO_TOOL:
-        break;
-    }
-  }
-
-  virtual void  OnRButtonDown(UINT inMessage, WPARAM inWParam, LPARAM inLParam)
-  {
-    POINT pos;
-
-    pos.x = (short )LOWORD(inLParam);
-    pos.y = (short )HIWORD(inLParam);
-
-    HMENU menu = GetSubMenu(mPopupMenuH, 0);
-    ClientToScreen(mWindowH, &pos);
-    TrackPopupMenu(menu, TPM_LEFTALIGN, pos.x, pos.y, 0, mWindowH, NULL);
-  }
-
-  virtual void  OnMouseWheel(WPARAM inWParam, LPARAM inLParam)
-  {
-    POINT mousePos;
-    int x, y, zDelta;
-    double  scale;
-
-    mousePos.x = (short )LOWORD(inLParam);
-    mousePos.y = (short )HIWORD(inLParam);
-    ScreenToClient(mWindowH, &mousePos);
-    if (PtInRect(&mImageDispRect, mousePos) == 0)
-      return;
-
-    zDelta = GET_WHEEL_DELTA_WPARAM(inWParam);
-
-    mousePos.x -= mImageDispRect.left;
-    mousePos.y -= mImageDispRect.top;
-    scale = mImageDispScale / 100.0;
-    x = (int )(mousePos.x / scale);
-    y = (int )(mousePos.y / scale);
-    x += mImageDispOffset.cx;
-    y += mImageDispOffset.cy;
-
-    if ((inWParam & (MK_SHIFT + MK_CONTROL)) == 0)
-      scale = CalcImageScale(zDelta / MOUSE_WHEEL_STEP);
-    else
-    {
-      if ((inWParam & MK_SHIFT) == 0)
-        scale = CalcImageScale(zDelta / MOUSE_WHEEL_STEP * 4);
-      else
-        scale = CalcImageScale(zDelta / MOUSE_WHEEL_STEP / 2);
-    }
-
-    mImageDispOffset.cx = x - (int )(mousePos.x / (scale / 100.0));
-    mImageDispOffset.cy = y - (int )(mousePos.y / (scale / 100.0));
-    SetDispScale(scale);
-  }
-
-  virtual void  OnSize(WPARAM inWParam, LPARAM inLParam)
-  {
-    UpdateImageDispDispRect();
-    if (GetKeyState(VK_SHIFT) < 0)
-    {
-      FitDispScaleToWindowSize();
-      return;
-    }
-
-    if (CheckImageDispOffset())
-      UpdateImageDisp();
-
-    UpdateStatusBar();
-  }
-
-  virtual bool  OnSetCursor(WPARAM inWParam, LPARAM inLParam)
-  {
-    return UpdateMouseCursor();
-  }
-
-
-  bool  UpdateMouseCursor()
-  {
-    if (UpdateMousePixelReadout() == false)
-      return false;
-
-    switch (mCursorMode)
-    {
-      case CURSOR_MODE_SCROLL_TOOL:
-        if (IsScrollable())
-          SetCursor(mScrollCursor);
-        else
-          SetCursor(mArrowCursor);
-        break;
-      case CURSOR_MODE_ZOOM_TOOL:
-        if (GetKeyState(VK_SHIFT) < 0)
-          SetCursor(mZoomMinusCursor);
-        else
-          SetCursor(mZoomPlusCursor);
-        break;
-      case CURSOR_MODE_INFO_TOOL:
-        SetCursor(mInfoCursor);
-        break;
-    }
-
-    return true;
-  }
-
-  virtual void  SetCursorMode(int inCursorMode)
-  {
-    mCursorMode = inCursorMode;
-
-    if (mMenuH == NULL)
-      return;
-
-    switch (mCursorMode)
-    {
-      case CURSOR_MODE_SCROLL_TOOL:
-        CheckMenuItem(mMenuH, IDM_SCROLL_TOOL, MF_CHECKED);
-        CheckMenuItem(mMenuH, IDM_ZOOM_TOOL, MF_UNCHECKED);
-        CheckMenuItem(mMenuH, IDM_INFO_TOOL, MF_UNCHECKED);
-        break;
-      case CURSOR_MODE_ZOOM_TOOL:
-        CheckMenuItem(mMenuH, IDM_SCROLL_TOOL, MF_UNCHECKED);
-        CheckMenuItem(mMenuH, IDM_ZOOM_TOOL, MF_CHECKED);
-        CheckMenuItem(mMenuH, IDM_INFO_TOOL, MF_UNCHECKED);
-        break;
-      case CURSOR_MODE_INFO_TOOL:
-        CheckMenuItem(mMenuH, IDM_SCROLL_TOOL, MF_UNCHECKED);
-        CheckMenuItem(mMenuH, IDM_ZOOM_TOOL, MF_UNCHECKED);
-        CheckMenuItem(mMenuH, IDM_INFO_TOOL, MF_CHECKED);
-        break;
-    }
-  }
-
-  void  UpdateImageDisp(bool inErase = false)
-  {
-    if (mWindowState != WINDOW_OPEN_STATE)
-      return;
-    ::InvalidateRect(mWindowH, &mImageClientRect, inErase);
-  }
-
-  double  CalcImageScale(int inStep)
-  {
-    double  val, scale;
-
-    val = log10(mImageDispScale) + inStep / 100.0;
-    scale = pow(10, val);
-
-    // 100% snap & 1% limit (just in case...)
-    if (fabs(scale - 100.0) <= 1.0)
-      scale = 100;
-    if (scale <= 1.0)
-      scale = 1.0;
-
-    return scale;
-  }
-
-private:
-
-  enum
-  {
-    WINDOW_INIT_STATE = 1,
-    WINDOW_OPEN_STATE,
-    WINDOW_CLOSED_STATE,
-    WINDOW_ERROR_STATE
-  };
-
-  int         mWindowState;
-  int         mPosX, mPosY;
-  char        *mWindowTitle;
-  int         mFileNameIndex;
-
-  HINSTANCE     mModuleH;
-  HWND        mWindowH;
-  HWND        mToolbarH;
-  HWND        mStatusbarH;
-  HWND        mRebarH;
-  HMENU       mMenuH;
-  HMENU       mPopupMenuH;
-
-  HCURSOR       mArrowCursor;
-  HCURSOR       mScrollCursor;
-  HCURSOR       mZoomPlusCursor;
-  HCURSOR       mZoomMinusCursor;
-  HCURSOR       mInfoCursor;
-
-  HICON       mAppIconH;
-
-  HFONT       mPixValueFont;
-
-  HANDLE        mMutexHandle;
-  HANDLE        mThreadHandle;
-  HANDLE        mEventHandle;
-  BITMAPINFOHEADER  *mBitmapInfo;
-  unsigned int    mBitmapInfoSize;
-  unsigned char   *mBitmapBits;
-  unsigned int    mBitmapBitsSize;
-
-  bool        mIsHiDPI;
-
-  bool        mIsThreadRunning;
-
-  unsigned char   *mAllocatedImageBuffer;
-
-  SIZE        mImageSize;
-  RECT        mImageDispRect;
-  RECT        mImageClientRect;
-  SIZE        mImageDispSize;
-  SIZE        mImageDispOffset;
-  double        mImageDispScale;
-  double        mImagePrevScale;
-  SIZE        mImageDispOffsetStart;
-
-  bool        mIsColorImage;
-
-  int         mCursorMode;
-  int         mMouseDownMode;
-  bool        mIsMouseDragging;
-  POINT       mMouseDownPos;
-
-  bool        mIsFullScreenMode;
-  RECT        mLastWindowRect;
-
-  bool        mIsMenubarEnabled;
-  bool        mIsToolbarEnabled;
-  bool        mIsStatusbarEnabled;
-  bool        mIsPlotEnabled;
-
-  void        (*mDrawOverlayFunc)(ImageWindow *, HDC, void *);
-  void        *mOverlayFuncData;
-
-#define FPS_DATA_NUM  25
-  double        mFPSValue;
-  double        mFPSData[FPS_DATA_NUM];
-  int         mFPSDataCount;
-
-  unsigned __int64  mFrequency;
-  unsigned __int64  mPrevCount;
-
-  int         mMonitorNum;
-  RECT        mMonitorRect[MONITOR_ENUM_MAX];
-
-  void  InitFPS()
-  {
-    ::QueryPerformanceFrequency((LARGE_INTEGER *)&mFrequency);
-    ::QueryPerformanceCounter((LARGE_INTEGER *)&mPrevCount);
-
-    mFPSValue = 0;
-    mFPSDataCount = 0;
-  }
-
-  void  UpdateFPS()
-  {
-    if (mWindowState != WINDOW_OPEN_STATE || mBitmapInfo == NULL)
-      return;
-
-    unsigned __int64  currentCount;
-    ::QueryPerformanceCounter((LARGE_INTEGER *)&currentCount);
-
-    mFPSValue = 1.0 * (double )mFrequency / (double )(currentCount - mPrevCount);
-    mPrevCount = currentCount;
-
-    if (mFPSDataCount < FPS_DATA_NUM)
-      mFPSDataCount++;
-    else
-      ::MoveMemory(mFPSData, &(mFPSData[1]), sizeof(double) * (FPS_DATA_NUM - 1));
-    mFPSData[mFPSDataCount - 1] = mFPSValue;
-
-    double  averageValue = 0;
-    for (int i = 0; i < mFPSDataCount; i++)
-      averageValue += mFPSData[i];
-    averageValue /= mFPSDataCount;
-
-#ifdef _UNICODE
-    wchar_t buf[IMAGE_STR_BUF_SIZE];
-
-    swprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("FPS: %.1f (avg.=%.1f)"), mFPSValue, averageValue);
-    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )3, (LPARAM )buf);
-#else
-    char  buf[IMAGE_STR_BUF_SIZE];
-
-    sprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("FPS: %.1f (avg.=%.1f)"), mFPSValue, averageValue);
-    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )3, (LPARAM )buf);
-#endif
-  }
-
-  unsigned char *GetPixelPointer(int inX, int inY)
-  {
-    if (inX < 0 || inX >= mImageSize.cx ||
-      inY < 0 || inY >= mImageSize.cy)
-      return NULL;
-
-    if (mBitmapInfo->biBitCount == 8)
-      return &(mBitmapBits[mImageSize.cx * inY + inX]);
-
-    int lineSize = mImageSize.cx * 3;
-    if (lineSize % 4 != 0)
-      lineSize = lineSize + (4 - (lineSize % 4));
-
-    if (mBitmapInfo->biHeight < 0)  // Topdown-up DIB
-      return &(mBitmapBits[lineSize * inY+ (inX * 3)]);
-
-    return &(mBitmapBits[lineSize * (mImageSize.cy - inY - 1)+ (inX * 3)]);
-  }
-
-  bool  UpdateMousePixelReadout()
-  {
-    POINT pos;
-    int x, y;
-    bool  result;
-
-    GetCursorPos(&pos);
-    ScreenToClient(mWindowH, &pos);
-    if (PtInRect(&mImageDispRect, pos) == 0)
-      result = false;
-    else
-      result = true;
-
-    pos.x -= mImageDispRect.left;
-    pos.y -= mImageDispRect.top;
-    x = (int )(pos.x / (mImageDispScale / 100.0));
-    y = (int )(pos.y / (mImageDispScale / 100.0));
-    x += mImageDispOffset.cx;
-    y += mImageDispOffset.cy;
-
-    unsigned char *pixelPtr = GetPixelPointer(x, y);
-
-#ifdef _UNICODE
-    wchar_t buf[IMAGE_STR_BUF_SIZE];
-
-    if (result == false || pixelPtr == NULL)
-      swprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT(""));
-    else
-    {
-      if (mBitmapInfo->biBitCount == 8)
-        swprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%03d (%d,%d)"), pixelPtr[0], x, y);
-      else
-        swprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%03d %03d %03d (%d,%d)"),
-              (int )pixelPtr[2], (int )pixelPtr[1], (int )pixelPtr[0], x, y);
-    }
-    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )2, (LPARAM )buf);
-#else
-    char  buf[IMAGE_STR_BUF_SIZE];
-
-    if (result == false || pixelPtr == NULL)
-      sprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT(""));
-    else
-    {
-      if (mBitmapInfo->biBitCount == 8)
-        sprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%03d (%d,%d)"), pixelPtr[0], x, y);
-      else
-        sprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%03d %03d %03d (%d,%d)"),
-              (int )pixelPtr[2], (int )pixelPtr[1], (int )pixelPtr[0], x, y);
-    }
-    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )2, (LPARAM )buf);
-#endif
-    return result;
-  }
-
-  void  UpdateWindowSize(bool inKeepDispScale = false)
-  {
-    if (mWindowState != WINDOW_OPEN_STATE || mBitmapInfo == NULL)
-      return;
-
-    RECT  rebarRect, statusbarRect, rect;
-    int   imageWidth, imageHeight;
-
-    GetWindowRect(mRebarH, &rebarRect);
-    int rebarHeight = rebarRect.bottom - rebarRect.top;
-    if (!IsToolbarEnabled())
-      rebarHeight = 0;
-    GetWindowRect(mStatusbarH, &statusbarRect);
-    int statusbarHeight = statusbarRect.bottom - statusbarRect.top;
-    if (!IsStatusbarEnabled())
-      statusbarHeight = 0;
-
-    mImageSize.cx = mBitmapInfo->biWidth;
-    mImageSize.cy = abs(mBitmapInfo->biHeight);
-
-    if (inKeepDispScale == false)
-    {
-      mImageDispScale = 100.0;
-      imageWidth = mImageSize.cx;
-      imageHeight = mImageSize.cy;
-    }
-    else
-    {
-      imageWidth = (int )(mImageSize.cx * mImageDispScale / 100.0);
-      imageHeight = (int )(mImageSize.cy * mImageDispScale / 100.0);
-    }
-
-    int displayWidth = GetSystemMetrics(SM_CXSCREEN);
-    int displayHEIGHT = GetSystemMetrics(SM_CYSCREEN);
-
-    if (imageWidth > displayWidth)
-      imageWidth = displayWidth;
-    if (imageHeight > displayHEIGHT)
-      imageHeight = displayHEIGHT;
-
-    rect.left = 0;
-    rect.top = 0;
-    rect.right = imageWidth;
-    rect.bottom = imageHeight + rebarHeight + statusbarHeight;
-    mImageClientRect = rect;
-    mImageClientRect.top = rebarHeight;
-    mImageClientRect.bottom -= statusbarHeight;
-    mImageDispRect = mImageClientRect;
-    mImageDispSize.cx = mImageDispRect.right - mImageDispRect.left;
-    mImageDispSize.cy = mImageDispRect.bottom - mImageDispRect.top;
-    mImageDispOffset.cx = 0;
-    mImageDispOffset.cy = 0;
-    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, TRUE); // if menu is enabled
-
-    SetWindowPos(mWindowH, NULL, 0, 0,
-      rect.right - rect.left, rect.bottom - rect.top, SWP_NOMOVE | SWP_NOOWNERZORDER);
-
-    UpdateStatusBar();
-  }
-
-  void  UpdateImageDispDispRect()
-  {
-    if (mWindowState != WINDOW_OPEN_STATE || mBitmapInfo == NULL)
-      return;
-
-    RECT  rebarRect, statusbarRect, rect;
-
-    GetWindowRect(mRebarH, &rebarRect);
-    int rebarHeight = rebarRect.bottom - rebarRect.top;
-    if (!IsToolbarEnabled())
-      rebarHeight = 0;
-    GetWindowRect(mStatusbarH, &statusbarRect);
-    int statusbarHeight = statusbarRect.bottom - statusbarRect.top;
-    if (!IsStatusbarEnabled())
-      statusbarHeight = 0;
-
-    GetClientRect(mWindowH, &rect);
-    rect.top += rebarHeight;
-    rect.bottom -= statusbarHeight;
-    mImageClientRect = rect;
-    bool  update = false;
-    {
-      int imageWidth = (int )(mImageSize.cx * mImageDispScale / 100.0);
-      int imageHeight = (int )(mImageSize.cy * mImageDispScale / 100.0);
-      if (imageWidth < rect.right - rect.left)
-      {
-        rect.left += (rect.right - rect.left - imageWidth) / 2;
-        rect.right  += rect.left + imageWidth;
-        update = true;
-      }
-      if (imageHeight < rect.bottom - rect.top)
-      {
-        rect.top  += (rect.bottom - rect.top - imageHeight) / 2;
-        rect.right  += rect.top + imageHeight;
-        update = true;
-      }
-    }
-    mImageDispRect = rect;
-    mImageDispSize.cx = mImageDispRect.right - mImageDispRect.left;
-    mImageDispSize.cy = mImageDispRect.bottom - mImageDispRect.top;
-    if (update)
-      UpdateImageDisp(true);
-    else
-      UpdateImageDisp();
-  }
-
-
-  void  UpdateStatusBar()
-  {
-    RECT  rect;
-    GetClientRect(mWindowH, &rect);
-
-    int statusbarSize[] = {100, 300, rect.right - 200, rect.right};
-    SendMessage(mStatusbarH, SB_SETPARTS, (WPARAM )4, (LPARAM )(LPINT)statusbarSize);
-
-#ifdef _UNICODE
-    wchar_t buf[IMAGE_STR_BUF_SIZE];
-
-    swprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("Zoom: %.0f%%"), mImageDispScale);
-    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )0, (LPARAM )buf);
-
-    if (mBitmapInfo != NULL)
-    {
-      swprintf_s(buf, IMAGE_STR_BUF_SIZE,
-        TEXT("Image: %dx%dx%d"),
-        mBitmapInfo->biWidth, abs(mBitmapInfo->biHeight), mBitmapInfo->biBitCount);
-      SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )1, (LPARAM )buf);
-    }
-
-    swprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("FPS: %.1f"), mFPSValue);
-    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )3, (LPARAM )buf);
-#else
-    char  buf[IMAGE_STR_BUF_SIZE];
-
-    sprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("Zoom: %.0f%%"), mImageDispScale);
-    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )0, (LPARAM )buf);
-
-    if (mBitmapInfo != NULL)
-    {
-      sprintf_s(buf, IMAGE_STR_BUF_SIZE,
-        TEXT("Image: %dx%dx%d"),
-        mBitmapInfo->biWidth, abs(mBitmapInfo->biHeight), mBitmapInfo->biBitCount);
-      SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )1, (LPARAM )buf);
-    }
-
-    sprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("FPS: %.1f"), mFPSValue);
-    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )3, (LPARAM )buf);
-#endif
-  }
-
-  bool  CheckImageDispOffset()
-  {
-    int limit;
-    double  scale = mImageDispScale / 100.0;
-    bool  update = false;
-    SIZE  prevOffset = mImageDispOffset;
-
-    limit = (int )(mImageSize.cx - mImageDispSize.cx / scale);
-    if (mImageDispOffset.cx > limit)
-    {
-      mImageDispOffset.cx = limit;
-      update = true;
-    }
-    if (mImageDispOffset.cx < 0)
-    {
-      mImageDispOffset.cx = 0;
-      update = true;
-    }
-    limit = (int )(mImageSize.cy - mImageDispSize.cy / scale);
-    if (mImageDispOffset.cy > limit)
-    {
-      mImageDispOffset.cy = limit;
-      update = true;
-    }
-    if (mImageDispOffset.cy < 0)
-    {
-      mImageDispOffset.cy = 0;
-      update = true;
-    }
-
-    if (prevOffset.cx == mImageDispOffset.cx &&
-      prevOffset.cy == mImageDispOffset.cy)
-      update = false;
-
-    return update;
-  }
-
-  void  DrawImage(HDC inHDC)
-  {
-    if (mImageDispScale == 100)
-    {
-      SetDIBitsToDevice(inHDC,
-        mImageDispRect.left, mImageDispRect.top,
-        mImageSize.cx, mImageSize.cy,
-        mImageDispOffset.cx, -1 * mImageDispOffset.cy,
-        0, mImageSize.cy,
-        mBitmapBits, (BITMAPINFO *)mBitmapInfo, DIB_RGB_COLORS);
-    }
-    else
-    {
-      double  scale = (mImageDispScale / 100.0);
-      SetStretchBltMode(inHDC, COLORONCOLOR);
-      StretchDIBits(inHDC,
-        mImageDispRect.left, mImageDispRect.top,
-        (int )(mImageSize.cx * scale),
-        (int )(mImageSize.cy * scale),
-        mImageDispOffset.cx, -1 * mImageDispOffset.cy,
-        mImageSize.cx, mImageSize.cy,
-        mBitmapBits, (BITMAPINFO *)mBitmapInfo, DIB_RGB_COLORS, SRCCOPY);
-
-      if (mImageDispScale >= 3000 && mBitmapInfo->biBitCount == 8)
-      {
-        int numX = (int )ceil((mImageDispRect.right - mImageDispRect.left) / scale);
-        int numY = (int )ceil((mImageDispRect.bottom - mImageDispRect.top) / scale);
-        int x, y;
-
-        HGDIOBJ prevFont = SelectObject(inHDC, mPixValueFont);
-        SetBkMode(inHDC, TRANSPARENT);
-        for (y = 0; y < numY; y++)
-        {
-          unsigned char *pixelPtr = GetPixelPointer(mImageDispOffset.cx, mImageDispOffset.cy + y);
-          for (x = 0; x < numX; x++)
-          {
-            wchar_t buf[IMAGE_STR_BUF_SIZE];
-            unsigned char pixelValue = pixelPtr[x];
-
-            swprintf_s(buf, IMAGE_STR_BUF_SIZE, TEXT("%03d"), pixelValue);
-
-            if (pixelValue > 0x80)
-              SetTextColor(inHDC, RGB(0x00, 0x00, 0x00));
-            else
-              SetTextColor(inHDC, RGB(0xFF, 0xFF, 0xFF));
-            TextOut(inHDC,
-              (int )((double )x * scale + scale * 0.5 - 10) + mImageDispRect.left,
-              (int )((double )y * scale + scale * 0.5 - 5) + mImageDispRect.top,
-              buf, 3);
-          }
-        }
-        SelectObject(inHDC, prevFont);
-      }
-    }
-    if (mIsPlotEnabled)
-    {
-      RECT  rect = GetImageClientRect();
-      int width = GetImageWidth();
-      int height = GetImageHeight();
-      double  v;
-      int x, y, prevY;
-
-      HPEN  hPen = CreatePen(PS_SOLID, 1, RGB(0xFF, 0xFF, 0xFF));
-      SelectObject(inHDC, hPen);
-
-      unsigned char *imagePtr = GetImageBufferPtr();
-      double  k = (rect.bottom - rect.top) / 255.0;
-
-      if (mImageClickNum == 0 || mLastImageClickY > height || mLastImageClickY < 0)
-        imagePtr += (width * (height / 2));
-      else
-        imagePtr += (width * mLastImageClickY);
-      x = rect.left;
-
-      for (int i = 0; i < width; i++)
-      {
-        v = k * (*imagePtr);
-        y = rect.bottom - (int )v;
-        if (x != 0)
-        {
-          MoveToEx(inHDC, (x - 1), prevY, NULL);
-          LineTo(inHDC, x, y);
-        }
-        prevY = y;
-        imagePtr++;
-        x++;
-      }
-      DeleteObject(hPen);
-    }
-
-    if (mDrawOverlayFunc != NULL)
-      mDrawOverlayFunc(this, inHDC, mOverlayFuncData);
-  }
-
+  // ---------------------------------------------------------------------------
+  // Window related member functions -------------------------------------------
+  // ---------------------------------------------------------------------------
+  // ThreadFunc
+  // ---------------------------------------------------------------------------
   static unsigned int _stdcall  ThreadFunc(void *arg)
   {
     ImageWindow *imageDisp = (ImageWindow *)arg;
     LPCTSTR windowName;
 
     //  Initialze important vairables
-    imageDisp->mImageDispScale = 100;
-    imageDisp->mImagePrevScale = 100;
+    imageDisp->mImageDispScale = 1.0;
+    imageDisp->mImagePrevScale = 1.0;
     imageDisp->InitFPS();
 
     imageDisp->InitMenu();
@@ -2219,26 +1425,25 @@ private:
 #endif
     //  Create WinDisp window
     imageDisp->mWindowH = ::CreateWindow(
-        IMAGE_WINDOW_CLASS_NAME,    //  window class name
-        windowName,           //  window title
-        WS_OVERLAPPEDWINDOW,      //  normal window style
-        imageDisp->mPosX,       //  x
-        imageDisp->mPosY,       //  y
-        IMAGE_WINDOW_DEFAULT_SIZE,  //  width
-        IMAGE_WINDOW_DEFAULT_SIZE,  //  height
-        HWND_DESKTOP,         //  no parent window
-        imageDisp->mMenuH,        //  no menus
-        GetModuleHandle(NULL),      //  handle to this module
-        NULL);              //  no lpParam
-
+                              IMAGE_WINDOW_CLASS_NAME,    //  window class name
+                              windowName,                 //  window title
+                              WS_OVERLAPPEDWINDOW,        //  normal window style
+                              imageDisp->mPosX,           //  x
+                              imageDisp->mPosY,           //  y
+                              IMAGE_WINDOW_DEFAULT_SIZE,  //  width
+                              IMAGE_WINDOW_DEFAULT_SIZE,  //  height
+                              HWND_DESKTOP,               //  no parent window
+                              imageDisp->mMenuH,          //  no menus
+                              GetModuleHandle(NULL),      //  handle to this module
+                              NULL);                      //  no lpParam
     if (imageDisp->mWindowH == NULL)
     {
-      imageDisp->mWindowState = WINDOW_ERROR_STATE;
-      return 1;
+      SetEvent(imageDisp->mEventHandle);
+      return 0;
     }
 
 #ifdef _UNICODE
-    delete windowName;
+    delete[] windowName;
 #endif
 
 #ifdef _WIN64
@@ -2252,42 +1457,43 @@ private:
     double fy = GetSystemMetrics(SM_CYSMICON) / 16.0f;
     if (fx < 1) fx = 1;
     if (fy < 1) fy = 1;
-    //printf("%f, %f\n", fx, fy);
     if (fx >= 1.5 || fy >= 1.5)
       imageDisp->mIsHiDPI = true;
 
     imageDisp->InitToolbar();
     imageDisp->InitCursor();
 
-    imageDisp->mPixValueFont = CreateFont(
+    imageDisp->mPixValueFont = ::CreateFont(
       10, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, ANSI_CHARSET,
       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-      ANTIALIASED_QUALITY | PROOF_QUALITY,
-      //PROOF_QUALITY,
+      DEFAULT_QUALITY,
       FIXED_PITCH | FF_MODERN,
-      TEXT("Lucida Console"));
-//      TEXT("Courier"));
+      IMAGE_WINDOW_VALUE_FONT);
 
-
-    imageDisp->mWindowState = WINDOW_OPEN_STATE;
+    imageDisp->mLabelFont = ::CreateFont(
+      20, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, ANSI_CHARSET,
+      OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+      DEFAULT_QUALITY,
+      FIXED_PITCH | FF_MODERN,
+      IMAGE_WINDOW_VALUE_FONT);
 
     imageDisp->UpdateWindowSize();
     ::ShowWindow(imageDisp->mWindowH, SW_SHOW);
-    SetEvent(imageDisp->mEventHandle);
+    ::SetEvent(imageDisp->mEventHandle);
     MSG msg;
     while (::GetMessage(&msg, NULL, 0, 0) != 0)
     {
       ::TranslateMessage(&msg);
       ::DispatchMessage(&msg);
     }
-
+    //
     ::DestroyWindow(imageDisp->mWindowH);
-    imageDisp->mWindowState = WINDOW_INIT_STATE;
     imageDisp->mWindowH = NULL;
-    imageDisp->mIsThreadRunning = false;
     return 0;
   }
-
+  // ---------------------------------------------------------------------------
+  // WindowFunc
+  // ---------------------------------------------------------------------------
   static LRESULT CALLBACK WindowFunc(HWND hwnd, UINT inMessage, WPARAM inWParam, LPARAM inLParam)
   {
     ImageWindow *imageDisp;
@@ -2308,11 +1514,9 @@ private:
           break;
         if (imageDisp->mBitmapInfo == NULL)
           break;
-
         result = WaitForSingleObject(imageDisp->mMutexHandle, INFINITE);
         if (result != WAIT_OBJECT_0)
           break;
-
         hdc = BeginPaint(hwnd, &paintstruct);
         imageDisp->DrawImage(hdc);
         EndPaint(hwnd, &paintstruct);
@@ -2369,10 +1573,1024 @@ private:
       default:
         return DefWindowProc(hwnd, inMessage, inWParam, inLParam);
     }
-
     return 0;
   }
+  // ---------------------------------------------------------------------------
+  // DrawImage
+  // ---------------------------------------------------------------------------
+  void  DrawImage(HDC inHDC)
+  {
+    if (mImageDispScale == 1.0)
+    {
+      SetDIBitsToDevice(inHDC,
+        mImageDispRect.left, mImageDispRect.top,
+        mImageSize.cx, mImageSize.cy,
+        mImageDispOffset.cx, -1 * mImageDispOffset.cy,
+        0, mImageSize.cy,
+        mBitmapBits, (BITMAPINFO *)mBitmapInfo, DIB_RGB_COLORS);
+    }
+    else
+    {
+      SetStretchBltMode(inHDC, COLORONCOLOR);
+      StretchDIBits(inHDC,
+        mImageDispRect.left, mImageDispRect.top,
+        (int )(mImageSize.cx * mImageDispScale),
+        (int )(mImageSize.cy * mImageDispScale),
+        mImageDispOffset.cx, -1 * mImageDispOffset.cy,
+        mImageSize.cx, mImageSize.cy,
+        mBitmapBits, (BITMAPINFO *)mBitmapInfo, DIB_RGB_COLORS, SRCCOPY);
 
+      if (mImageDispScale >= 30 && mBitmapInfo->biBitCount == 8)
+      {
+        int numX = (int )ceil((mImageDispRect.right - mImageDispRect.left) / mImageDispScale);
+        int numY = (int )ceil((mImageDispRect.bottom - mImageDispRect.top) / mImageDispScale);
+        int x, y;
+
+        HGDIOBJ prevFont = ::SelectObject(inHDC, mPixValueFont);
+        ::SetBkMode(inHDC, TRANSPARENT);
+        for (y = 0; y < numY; y++)
+        {
+          unsigned char *pixelPtr = GetPixelPtr(mImageDispOffset.cx, mImageDispOffset.cy + y);
+          for (x = 0; x < numX; x++)
+          {
+            unsigned char pixelValue = pixelPtr[x];
+#ifdef _UNICODE
+            wchar_t buf[IMAGE_WINDOW_STR_BUF_SIZE];
+            swprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT("%03d"), pixelValue);
+#else
+            char buf[IMAGE_WINDOW_STR_BUF_SIZE];
+            sprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT("%03d"), pixelValue);
+#endif
+            if (pixelValue > 0x80)
+              ::SetTextColor(inHDC, RGB(0x00, 0x00, 0x00));
+            else
+              ::SetTextColor(inHDC, RGB(0xFF, 0xFF, 0xFF));
+            ::TextOut(inHDC,
+              (int )((double )x * mImageDispScale + mImageDispScale * 0.5 - 10) + mImageDispRect.left,
+              (int )((double )y * mImageDispScale + mImageDispScale * 0.5 - 5) + mImageDispRect.top,
+              buf, 3);
+          }
+        }
+        ::SelectObject(inHDC, prevFont);
+      }
+    }
+
+    if (mLabelList.size() != 0)
+    {
+      HGDIOBJ prevFont = ::SelectObject(inHDC, mLabelFont);
+      for (size_t i = 0; i < mLabelList.size(); i++)
+      {
+        size_t  idx = mLabelList.size() - i - 1;
+        RECT  rect = mLabelList[idx].rect;
+        const char *labelStr = mLabelList[idx].label.c_str();
+        int  labelStrLen = (int )strlen(labelStr);
+        COLORREF color = mLabelList[idx].color;
+        SIZE  size;
+#ifdef _UNICODE
+        wchar_t buf[IMAGE_WINDOW_STR_BUF_SIZE];
+        MultiByteToWideChar(CP_ACP, 0, labelStr, -1, buf, IMAGE_WINDOW_STR_BUF_SIZE);
+        ::GetTextExtentPoint32W(inHDC, buf, labelStrLen, &size);
+#else
+        const char *buf = labelStr;
+        ::GetTextExtentPoint32A(inHDC, buf, labelStrLen, &size);
+#endif
+        double y =  0.299 * (double )((color >>  0) & 0xFF) +
+                    0.587 * (double )((color >>  8) & 0xFF) +
+                    0.114 * (double )((color >> 16) & 0xFF);
+  
+        ImageToDispRect(&rect);
+        HBRUSH  hbr = ::CreateSolidBrush(color);
+        ::FrameRect(inHDC, &rect, hbr);
+    
+        ::SetBkMode(inHDC, TRANSPARENT);
+        rect.right = rect.left + size.cx + 8;
+        if ((rect.top - mImageDispRect.top)>= size.cy)
+        {
+          rect.bottom = rect.top;
+          rect.top -= size.cy;
+        }
+        else
+        {
+          rect.bottom = rect.top + size.cy;
+        }
+        ::FillRect(inHDC, &rect, hbr);
+  
+        if (y > 200.0)
+          ::SetTextColor(inHDC, RGB(0x00, 0x00, 0x00));
+        else
+          ::SetTextColor(inHDC, RGB(0xFF, 0xFF, 0xFF));
+        //::BeginPath(inHDC);
+        ::TextOut(inHDC,
+                  rect.left+4, rect.top,
+                  buf, labelStrLen);
+        //::EndPath(inHDC);
+        //::StrokeAndFillPath(inHDC);
+        ::DeleteObject(hbr);
+      }
+      ::SelectObject(inHDC, prevFont);
+    }
+
+    int width = 0, height = 0;
+    if (mOverlayText.size() != 0)
+    {
+      HGDIOBJ prevFont = ::SelectObject(inHDC, mLabelFont);
+      HBRUSH  hbr = ::CreateSolidBrush(RGB(0xFF, 0xFF, 0xFF));
+      ::SetTextColor(inHDC, RGB(0x00, 0x00, 0x00));
+
+#ifdef _UNICODE
+      wchar_t buf[IMAGE_WINDOW_STR_BUF_SIZE];
+#else
+      const char *buf;
+#endif
+      const char *text = mOverlayText.c_str();
+      int lineNum = (int )mOverlayTextLineList.size();
+      for (int i = 0; i < lineNum; i++)
+      {
+        const char *lineStr;
+        int len = mOverlayTextLineList[i].len;
+        if (len != 0)
+        {
+          lineStr = &(text[mOverlayTextLineList[i].start]);
+        }
+        else
+        {
+          lineStr = " ";
+          len = 1;
+        }
+        SIZE  size;
+#ifdef _UNICODE
+        MultiByteToWideChar(CP_ACP, 0, lineStr, len, buf, IMAGE_WINDOW_STR_BUF_SIZE);
+        ::GetTextExtentPoint32W(inHDC, buf, len, &size);
+#else
+        buf = lineStr;
+        ::GetTextExtentPoint32A(inHDC, buf, len, &size);
+#endif
+        if (size.cx > width)
+          width = size.cx;
+        if (size.cy > height)
+          height = size.cy;
+      }
+
+      RECT rect = mImageDispRect;
+      rect.left += 10;
+      rect.top += 10;
+      rect.right = rect.left + width + 8;
+      rect.bottom = rect.top + height * lineNum;
+      ::FillRect(inHDC, &rect, hbr);
+
+      for (int i = 0; i < lineNum; i++)
+      {
+        const char *lineStr;
+        int len = mOverlayTextLineList[i].len;
+        if (len != 0)
+        {
+          lineStr = &(text[mOverlayTextLineList[i].start]);
+#ifdef _UNICODE
+          MultiByteToWideChar(CP_ACP, 0, lineStr, len, buf, IMAGE_WINDOW_STR_BUF_SIZE);
+#else
+          buf = lineStr;
+#endif
+          ::TextOut(inHDC,
+                    rect.left+4, rect.top + i * height,
+                    buf, len);
+        }
+      }
+      ::SelectObject(inHDC, prevFont);
+      ::DeleteObject(hbr);
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // OnCommand
+  // ---------------------------------------------------------------------------
+  void  OnCommand(WPARAM inWParam, LPARAM inLParam)
+  {
+    switch (LOWORD(inWParam))
+    {
+      case IDM_SAVE:
+        WriteBitmapFile();
+        break;
+      case IDM_SAVE_AS:
+        SaveAsBitmapFile();
+        break;
+      case IDM_PROPERTY:
+        DumpBitmapInfo();
+        break;
+      case IDM_CLOSE:
+        PostQuitMessage(0);
+        break;
+      case IDM_COPY:
+        CopyToClipboard();
+        break;
+      case IDM_MENUBAR:
+        if (IsMenubarEnabled())
+          DisableMenubar();
+        else
+          EnableMenubar();
+        break;
+      case IDM_TOOLBAR:
+        if (IsToolbarEnabled())
+          DisableToolbar();
+        else
+          EnableToolbar();
+        break;
+      case IDM_STATUSBAR:
+        if (IsStatusbarEnabled())
+          DisableStatusbar();
+        else
+          EnableStatusbar();
+        break;
+      case IDM_ZOOMPANE:
+        break;
+      case IDM_FULL_SCREEN:
+        if (IsFullScreenMode())
+          DisableFullScreenMode();
+        else
+          EnableFullScreenMode();
+        break;
+      case IDM_FPS:
+        break;
+      case IDM_FREEZE:
+        break;
+      case IDM_SCROLL_TOOL:
+        SetCursorMode(CURSOR_MODE_SCROLL_TOOL);
+        break;
+      case IDM_ZOOM_TOOL:
+        SetCursorMode(CURSOR_MODE_ZOOM_TOOL);
+        break;
+      case IDM_INFO_TOOL:
+        SetCursorMode(CURSOR_MODE_INFO_TOOL);
+        break;
+      case IDM_ZOOM_IN:
+        ZoomIn();
+        if (GetKeyState(VK_CONTROL) < 0)
+          UpdateWindowSize(true);
+        break;
+      case IDM_ZOOM_OUT:
+        ZoomOut();
+        if (GetKeyState(VK_CONTROL) < 0)
+          UpdateWindowSize(true);
+        break;
+      case IDM_ACTUAL_SIZE:
+        if (GetKeyState(VK_CONTROL) < 0 || IsFullScreenMode() == true)
+          SetDispScale(100);
+        else
+        {
+          UpdateWindowSize();
+          UpdateWindowDisp();
+        }
+        break;
+      case IDM_FIT_WINDOW:
+        FitDispScaleToWindowSize();
+        break;
+      case IDM_ADJUST_WINDOW_SIZE:
+        if (IsFullScreenMode() == false)
+          UpdateWindowSize(true);
+        break;
+      case IDM_CASCADE_WINDOW:
+        break;
+      case IDM_TILE_WINDOW:
+        break;
+      case IDM_ABOUT:
+        ::MessageBox(mWindowH,
+          IMAGE_WINDOW_ABOUT_STR,
+          IMAGE_WINDOW_ABOUT_TITLE, MB_OK);
+        break;
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // OnKeyDown
+  // ---------------------------------------------------------------------------
+  void  OnKeyDown(WPARAM ininWParam, LPARAM inLParam)
+  {
+    switch (ininWParam)
+    {
+      case VK_SHIFT:
+        UpdateMouseCursor();
+        break;
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // OnKeyUp
+  // ---------------------------------------------------------------------------
+  void  OnKeyUp(WPARAM ininWParam, LPARAM inLParam)
+  {
+    switch (ininWParam)
+    {
+      case VK_SHIFT:
+        UpdateMouseCursor();
+        break;
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // OnChar
+  // ---------------------------------------------------------------------------
+  virtual void  OnChar(WPARAM ininWParam, LPARAM inLParam)
+  {
+    switch (ininWParam)
+    {
+      case VK_ESCAPE:
+        if (IsFullScreenMode())
+          DisableFullScreenMode();
+        break;
+      case 's':
+      case 'S':
+        WriteBitmapFile();
+        break;
+      case 'd':
+      case 'D':
+        DumpBitmapInfo();
+        break;
+      case 'f':
+      case 'F':
+        if (IsFullScreenMode())
+          DisableFullScreenMode();
+        else
+          EnableFullScreenMode();
+        break;
+      case '+':
+        ZoomIn();
+        break;
+      case '-':
+        ZoomOut();
+        break;
+      case '=':
+        SetDispScale(100);
+        break;
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // OnLButtonDown
+  // ---------------------------------------------------------------------------
+  void  OnLButtonDown(UINT inMessage, WPARAM inWParam, LPARAM inLParam)
+  {
+    POINT localPos;
+    int x, y;
+
+    mMouseDownPos.x = (short )LOWORD(inLParam);
+    mMouseDownPos.y = (short )HIWORD(inLParam);
+
+    if ((inWParam & MK_CONTROL) == 0)
+      mMouseDownMode = mCursorMode;
+    else
+      mMouseDownMode = CURSOR_MODE_SCROLL_TOOL;
+
+    switch (mMouseDownMode)
+    {
+      case CURSOR_MODE_SCROLL_TOOL:
+        mIsMouseDragging = true;
+        mImageDispOffsetStart = mImageDispOffset;
+        SetCapture(mWindowH);
+        break;
+      case CURSOR_MODE_ZOOM_TOOL:
+        localPos = mMouseDownPos;
+        localPos.x -= mImageDispRect.left;
+        localPos.y -= mImageDispRect.top;
+        x = (int )(localPos.x / mImageDispScale);
+        y = (int )(localPos.y / mImageDispScale);
+        x += mImageDispOffset.cx;
+        y += mImageDispOffset.cy;
+        double scale;
+        if ((inWParam & MK_SHIFT) == 0)
+          scale = CalcImageScale(IMAGE_WINDOW_ZOOM_STEP);
+        else
+          scale = CalcImageScale(-IMAGE_WINDOW_ZOOM_STEP);
+        mImageDispOffset.cx = x - (int )(localPos.x / scale);
+        mImageDispOffset.cy = y - (int )(localPos.y / scale);
+        SetDispScale(scale);
+        break;
+      case CURSOR_MODE_INFO_TOOL:
+        localPos = mMouseDownPos;
+        localPos.x -= mImageDispRect.left;
+        localPos.y -= mImageDispRect.top;
+        x = (int )(localPos.x / mImageDispScale);
+        y = (int )(localPos.y / mImageDispScale);
+        x += mImageDispOffset.cx;
+        y += mImageDispOffset.cy;
+        if (x <0 || y < 0 ||
+          x >= mImageSize.cx || y >= mImageSize.cy)
+          break;
+        mImageClickNum++;
+        if (IsColor())
+        {
+          int r = mBitmapBits[mImageSize.cx * y + x + 0];
+          int g = mBitmapBits[mImageSize.cx * y + x + 1];
+          int b = mBitmapBits[mImageSize.cx * y + x + 2];
+          printf("%.4d: X:%.4d Y:%.4d VALUE:%.3d %.3d %.3d\n", mImageClickNum, x, y, r, g, b);
+        }
+        else
+        {
+          unsigned char v = mBitmapBits[mImageSize.cx * y + x];
+          char  buf[256] = "00000000";
+          for (int i = 0; i < 8; i++)
+            if (((v << i) & 0x80) != 0)
+              buf[i] = '1';
+          printf("%.4d: X:%.4d Y:%.4d VALUE:%.3d %.2X %s\n", mImageClickNum, x, y, (int )v, (int )v, buf);
+        }
+        break;
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // OnMButtonDown
+  // ---------------------------------------------------------------------------
+  void  OnMButtonDown(UINT inMessage, WPARAM inWParam, LPARAM inLParam)
+  {
+    POINT localPos;
+    int x, y;
+
+    ::ZeroMemory(&localPos, sizeof(localPos));
+    localPos.x = (short )LOWORD(inLParam);
+    localPos.y = (short )HIWORD(inLParam);
+
+    localPos.x -= mImageDispRect.left;
+    localPos.y -= mImageDispRect.top;
+    x = (int )(localPos.x / mImageDispScale);
+    y = (int )(localPos.y / mImageDispScale);
+    x += mImageDispOffset.cx;
+    y += mImageDispOffset.cy;
+
+    double scale = mImageDispScale;
+    if ((inWParam & (MK_SHIFT + MK_CONTROL)) == 0)
+      scale = 1.0;
+    else
+    {
+      if ((inWParam & MK_SHIFT) == 0)
+        scale = 30.0;
+      else
+        scale = CalcWindowSizeFitScale();
+    }
+
+    if (mImageDispScale == scale)
+      scale = mImagePrevScale;
+    mImagePrevScale = mImageDispScale;
+
+    mImageDispOffset.cx = x - (int )(localPos.x / scale);
+    mImageDispOffset.cy = y - (int )(localPos.y / scale);
+    SetDispScale(scale);
+  }
+  // ---------------------------------------------------------------------------
+  // OnMouseMove
+  // ---------------------------------------------------------------------------
+  void  OnMouseMove(WPARAM inWParam, LPARAM inLParam)
+  {
+    if (mIsMouseDragging == false)
+      return;
+
+    POINT currentPos;
+
+    ::ZeroMemory(&currentPos, sizeof(currentPos));
+    currentPos.x = (short )LOWORD(inLParam);
+    currentPos.y = (short )HIWORD(inLParam);
+
+    switch (mMouseDownMode)
+    {
+      case CURSOR_MODE_SCROLL_TOOL:
+        mImageDispOffset = mImageDispOffsetStart;
+        mImageDispOffset.cx -= (int )((currentPos.x - mMouseDownPos.x) / mImageDispScale);
+        mImageDispOffset.cy -= (int )((currentPos.y - mMouseDownPos.y) / mImageDispScale);
+        CheckImageDispOffset();
+        UpdateWindowDisp();
+        break;
+      case CURSOR_MODE_ZOOM_TOOL:
+        break;
+      case CURSOR_MODE_INFO_TOOL:
+        break;
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // OnLButtonUp
+  // ---------------------------------------------------------------------------
+  void  OnLButtonUp(WPARAM inWParam, LPARAM inLParam)
+  {
+    switch (mMouseDownMode)
+    {
+      case CURSOR_MODE_SCROLL_TOOL:
+        mIsMouseDragging = false;
+        ReleaseCapture();
+        break;
+      case CURSOR_MODE_ZOOM_TOOL:
+        break;
+      case CURSOR_MODE_INFO_TOOL:
+        break;
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // OnRButtonDown
+  // ---------------------------------------------------------------------------
+  void  OnRButtonDown(UINT inMessage, WPARAM inWParam, LPARAM inLParam)
+  {
+    POINT pos;
+
+    ::ZeroMemory(&pos, sizeof(pos));
+    pos.x = (short )LOWORD(inLParam);
+    pos.y = (short )HIWORD(inLParam);
+
+    HMENU menu = GetSubMenu(mPopupMenuH, 0);
+    ClientToScreen(mWindowH, &pos);
+    TrackPopupMenu(menu, TPM_LEFTALIGN, pos.x, pos.y, 0, mWindowH, NULL);
+  }
+  // ---------------------------------------------------------------------------
+  // OnMouseWheel
+  // ---------------------------------------------------------------------------
+  virtual void  OnMouseWheel(WPARAM inWParam, LPARAM inLParam)
+  {
+    POINT mousePos;
+    int x, y, zDelta;
+
+    ::ZeroMemory(&mousePos, sizeof(mousePos));
+    mousePos.x = (short )LOWORD(inLParam);
+    mousePos.y = (short )HIWORD(inLParam);
+    ScreenToClient(mWindowH, &mousePos);
+    if (PtInRect(&mImageDispRect, mousePos) == 0)
+      return;
+
+    zDelta = GET_WHEEL_DELTA_WPARAM(inWParam);
+
+    mousePos.x -= mImageDispRect.left;
+    mousePos.y -= mImageDispRect.top;
+    x = (int )(mousePos.x / mImageDispScale);
+    y = (int )(mousePos.y / mImageDispScale);
+    x += mImageDispOffset.cx;
+    y += mImageDispOffset.cy;
+
+    double scale = mImageDispScale;
+    if ((inWParam & (MK_SHIFT + MK_CONTROL)) == 0)
+      scale = CalcImageScale(zDelta / IMAGE_WINDOW_MOUSE_WHEEL_STEP);
+    else
+    {
+      if ((inWParam & MK_SHIFT) == 0)
+        scale = CalcImageScale(zDelta / IMAGE_WINDOW_MOUSE_WHEEL_STEP * 4);
+      else
+        scale = CalcImageScale(zDelta / IMAGE_WINDOW_MOUSE_WHEEL_STEP / 2);
+    }
+
+    mImageDispOffset.cx = x - (int )(mousePos.x / scale);
+    mImageDispOffset.cy = y - (int )(mousePos.y / scale);
+    SetDispScale(scale);
+  }
+  // ---------------------------------------------------------------------------
+  // OnSize
+  // ---------------------------------------------------------------------------
+  void  OnSize(WPARAM inWParam, LPARAM inLParam)
+  {
+    UpdateDispRect();
+    if (GetKeyState(VK_SHIFT) < 0)
+    {
+      FitDispScaleToWindowSize();
+      return;
+    }
+
+    if (CheckImageDispOffset())
+      UpdateWindowDisp();
+
+    UpdateStatusBar();
+  }
+  // ---------------------------------------------------------------------------
+  // OnSetCursor
+  // ---------------------------------------------------------------------------
+  bool  OnSetCursor(WPARAM inWParam, LPARAM inLParam)
+  {
+    return UpdateMouseCursor();
+  }
+  // ---------------------------------------------------------------------------
+  // UpdateMouseCursor
+  // ---------------------------------------------------------------------------
+  bool  UpdateMouseCursor()
+  {
+    if (UpdateMousePixelReadout() == false)
+      return false;
+
+    switch (mCursorMode)
+    {
+      case CURSOR_MODE_SCROLL_TOOL:
+        if (IsScrollable())
+          SetCursor(mScrollCursor);
+        else
+          SetCursor(mArrowCursor);
+        break;
+      case CURSOR_MODE_ZOOM_TOOL:
+        if (GetKeyState(VK_SHIFT) < 0)
+          SetCursor(mZoomMinusCursor);
+        else
+          SetCursor(mZoomPlusCursor);
+        break;
+      case CURSOR_MODE_INFO_TOOL:
+        SetCursor(mInfoCursor);
+        break;
+    }
+
+    return true;
+  }
+  // ---------------------------------------------------------------------------
+  // SetCursorMode
+  // ---------------------------------------------------------------------------
+  virtual void  SetCursorMode(int inCursorMode)
+  {
+    mCursorMode = inCursorMode;
+
+    if (mMenuH == NULL)
+      return;
+
+    switch (mCursorMode)
+    {
+      case CURSOR_MODE_SCROLL_TOOL:
+        CheckMenuItem(mMenuH, IDM_SCROLL_TOOL, MF_CHECKED);
+        CheckMenuItem(mMenuH, IDM_ZOOM_TOOL, MF_UNCHECKED);
+        CheckMenuItem(mMenuH, IDM_INFO_TOOL, MF_UNCHECKED);
+        break;
+      case CURSOR_MODE_ZOOM_TOOL:
+        CheckMenuItem(mMenuH, IDM_SCROLL_TOOL, MF_UNCHECKED);
+        CheckMenuItem(mMenuH, IDM_ZOOM_TOOL, MF_CHECKED);
+        CheckMenuItem(mMenuH, IDM_INFO_TOOL, MF_UNCHECKED);
+        break;
+      case CURSOR_MODE_INFO_TOOL:
+        CheckMenuItem(mMenuH, IDM_SCROLL_TOOL, MF_UNCHECKED);
+        CheckMenuItem(mMenuH, IDM_ZOOM_TOOL, MF_UNCHECKED);
+        CheckMenuItem(mMenuH, IDM_INFO_TOOL, MF_CHECKED);
+        break;
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // UpdateWindowDisp
+  // ---------------------------------------------------------------------------
+  void  UpdateWindowDisp(bool inErase = false)
+  {
+    if (IsWindowOpen() == false)
+      return;
+    ::InvalidateRect(mWindowH, &mImageClientRect, inErase);
+  }
+  // ---------------------------------------------------------------------------
+  // CalcImageScale
+  // ---------------------------------------------------------------------------
+  double  CalcImageScale(int inStep)
+  {
+    double  val, scale;
+
+    val = log10(mImageDispScale * 100.0) + inStep / 100.0;
+    scale = pow(10, val);
+
+    // 100% snap & 1% limit (just in case...)
+    if (fabs(scale - 100.0) <= 1.0)
+      scale = 100;
+    if (scale <= 1.0)
+      scale = 1.0;
+
+    return scale / 100.0;
+  }
+  // ---------------------------------------------------------------------------
+  // CalcWindowSizeFitScale
+  // ---------------------------------------------------------------------------
+  double  CalcWindowSizeFitScale()
+  {
+    double  imageRatio = (double )mImageSize.cy / (double )mImageSize.cx;
+    double width = mImageClientRect.right - mImageClientRect.left;
+    double height = mImageClientRect.bottom - mImageClientRect.top;
+    double  dispRatio = (double )mImageClientRect.bottom / width;
+    double  scale;
+
+    if (imageRatio > dispRatio)
+      scale = height / (double )mImageSize.cy;
+    else
+      scale = width / (double )mImageSize.cx;
+
+    return scale * 100.0;
+  }
+  // ---------------------------------------------------------------------------
+  // IsScrollable
+  // ---------------------------------------------------------------------------
+  bool  IsScrollable()
+  {
+      int imageWidth = (int )(mImageSize.cx * mImageDispScale);
+      int imageHeight = (int )(mImageSize.cy * mImageDispScale);
+
+      if (imageWidth > mImageDispSize.cx)
+        return true;
+      if (imageHeight > mImageDispSize.cy)
+        return true;
+
+      return false;
+  }
+  // ---------------------------------------------------------------------------
+  // InitFPS
+  // ---------------------------------------------------------------------------
+  void  InitFPS()
+  {
+    ::QueryPerformanceFrequency((LARGE_INTEGER *)&mFrequency);
+    ::QueryPerformanceCounter((LARGE_INTEGER *)&mPrevCount);
+
+    mFPSValue = 0;
+    mFPSDataCount = 0;
+  }
+  // ---------------------------------------------------------------------------
+  // UpdateFPS
+  // ---------------------------------------------------------------------------
+  void  UpdateFPS()
+  {
+    if (IsWindowOpen() == false || mBitmapInfo == NULL)
+      return;
+
+    unsigned __int64  currentCount = 0;
+    ::QueryPerformanceCounter((LARGE_INTEGER *)&currentCount);
+
+    mFPSValue = 1.0 * (double )mFrequency / (double )(currentCount - mPrevCount);
+    mPrevCount = currentCount;
+
+    if (mFPSDataCount < IMAGE_WINDOW_FPS_DATA_NUM)
+      mFPSDataCount++;
+    else
+      ::MoveMemory(mFPSData, &(mFPSData[1]), sizeof(double) * (IMAGE_WINDOW_FPS_DATA_NUM - 1));
+    mFPSData[mFPSDataCount - 1] = mFPSValue;
+
+    double  averageValue = 0;
+    for (int i = 0; i < mFPSDataCount; i++)
+      averageValue += mFPSData[i];
+    averageValue /= mFPSDataCount;
+
+#ifdef _UNICODE
+    wchar_t buf[IMAGE_WINDOW_STR_BUF_SIZE];
+
+    swprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT("FPS: %.1f (avg.=%.1f)"), mFPSValue, averageValue);
+    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )3, (LPARAM )buf);
+#else
+    char  buf[IMAGE_WINDOW_STR_BUF_SIZE];
+
+    sprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT("FPS: %.1f (avg.=%.1f)"), mFPSValue, averageValue);
+    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )3, (LPARAM )buf);
+#endif
+  }
+  // ---------------------------------------------------------------------------
+  // UpdateMousePixelReadout
+  // ---------------------------------------------------------------------------
+  bool  UpdateMousePixelReadout()
+  {
+    POINT pos;
+    int x, y;
+    bool  result;
+
+    GetCursorPos(&pos);
+    ScreenToClient(mWindowH, &pos);
+    if (PtInRect(&mImageDispRect, pos) == 0)
+      result = false;
+    else
+      result = true;
+
+    pos.x -= mImageDispRect.left;
+    pos.y -= mImageDispRect.top;
+    x = (int )(pos.x / mImageDispScale);
+    y = (int )(pos.y / mImageDispScale);
+    x += mImageDispOffset.cx;
+    y += mImageDispOffset.cy;
+
+    unsigned char *pixelPtr = GetPixelPtr(x, y);
+
+#ifdef _UNICODE
+    wchar_t buf[IMAGE_WINDOW_STR_BUF_SIZE];
+
+    if (result == false || pixelPtr == NULL)
+      swprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT(""));
+    else
+    {
+      if (mBitmapInfo->biBitCount == 8)
+        swprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT("%03d (%d,%d)"), pixelPtr[0], x, y);
+      else
+        swprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT("%03d %03d %03d (%d,%d)"),
+              (int )pixelPtr[2], (int )pixelPtr[1], (int )pixelPtr[0], x, y);
+    }
+    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )2, (LPARAM )buf);
+#else
+    char  buf[IMAGE_WINDOW_STR_BUF_SIZE];
+
+    if (result == false || pixelPtr == NULL)
+      sprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT(""));
+    else
+    {
+      if (mBitmapInfo->biBitCount == 8)
+        sprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT("%03d (%d,%d)"), pixelPtr[0], x, y);
+      else
+        sprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT("%03d %03d %03d (%d,%d)"),
+              (int )pixelPtr[2], (int )pixelPtr[1], (int )pixelPtr[0], x, y);
+    }
+    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )2, (LPARAM )buf);
+#endif
+    return result;
+  }
+  // ---------------------------------------------------------------------------
+  // UpdateWindowSize
+  // ---------------------------------------------------------------------------
+  void  UpdateWindowSize(bool inKeepDispScale = false)
+  {
+    if (IsWindowOpen() == false || mBitmapInfo == NULL)
+      return;
+
+    RECT  rebarRect, statusbarRect, rect;
+    int   imageWidth, imageHeight;
+
+    ::ZeroMemory(&rect, sizeof(rect));
+    GetWindowRect(mRebarH, &rebarRect);
+    int rebarHeight = rebarRect.bottom - rebarRect.top;
+    if (!IsToolbarEnabled())
+      rebarHeight = 0;
+    GetWindowRect(mStatusbarH, &statusbarRect);
+    int statusbarHeight = statusbarRect.bottom - statusbarRect.top;
+    if (!IsStatusbarEnabled())
+      statusbarHeight = 0;
+
+    if (inKeepDispScale == false)
+    {
+      mImageDispScale = 1.0;
+      imageWidth = mImageSize.cx;
+      imageHeight = mImageSize.cy;
+    }
+    else
+    {
+      imageWidth = (int )(mImageSize.cx * mImageDispScale);
+      imageHeight = (int )(mImageSize.cy * mImageDispScale);
+    }
+
+    int displayWidth = GetSystemMetrics(SM_CXSCREEN);
+    int displayHEIGHT = GetSystemMetrics(SM_CYSCREEN);
+
+    if (imageWidth > displayWidth)
+      imageWidth = displayWidth;
+    if (imageHeight > displayHEIGHT)
+      imageHeight = displayHEIGHT;
+
+    rect.left = 0;
+    rect.top = 0;
+    rect.right = imageWidth;
+    rect.bottom = imageHeight + rebarHeight + statusbarHeight;
+    mImageClientRect = rect;
+    mImageClientRect.top = rebarHeight;
+    mImageClientRect.bottom -= statusbarHeight;
+    mImageDispRect = mImageClientRect;
+    mImageDispSize.cx = mImageDispRect.right - mImageDispRect.left;
+    mImageDispSize.cy = mImageDispRect.bottom - mImageDispRect.top;
+    mImageDispOffset.cx = 0;
+    mImageDispOffset.cy = 0;
+    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, TRUE); // if menu is enabled
+
+    SetWindowPos(mWindowH, NULL, 0, 0,
+      rect.right - rect.left, rect.bottom - rect.top, SWP_NOMOVE | SWP_NOOWNERZORDER);
+
+    UpdateStatusBar();
+  }
+  // ---------------------------------------------------------------------------
+  // UpdateDispRect
+  // ---------------------------------------------------------------------------
+  void  UpdateDispRect()
+  {
+    if (IsWindowOpen() == false || mBitmapInfo == NULL)
+      return;
+
+    RECT  rebarRect, statusbarRect, rect;
+
+    GetWindowRect(mRebarH, &rebarRect);
+    int rebarHeight = rebarRect.bottom - rebarRect.top;
+    if (!IsToolbarEnabled())
+      rebarHeight = 0;
+    GetWindowRect(mStatusbarH, &statusbarRect);
+    int statusbarHeight = statusbarRect.bottom - statusbarRect.top;
+    if (!IsStatusbarEnabled())
+      statusbarHeight = 0;
+
+    GetClientRect(mWindowH, &rect);
+    rect.top += rebarHeight;
+    rect.bottom -= statusbarHeight;
+    mImageClientRect = rect;
+    bool  update = false;
+    {
+      int imageWidth = (int )(mImageSize.cx * mImageDispScale);
+      int imageHeight = (int )(mImageSize.cy * mImageDispScale);
+      if (imageWidth < rect.right - rect.left)
+      {
+        rect.left += (rect.right - rect.left - imageWidth) / 2;
+        rect.right  += rect.left + imageWidth;
+        update = true;
+      }
+      if (imageHeight < rect.bottom - rect.top)
+      {
+        rect.top  += (rect.bottom - rect.top - imageHeight) / 2;
+        rect.right  += rect.top + imageHeight;
+        update = true;
+      }
+    }
+    mImageDispRect = rect;
+    mImageDispSize.cx = mImageDispRect.right - mImageDispRect.left;
+    mImageDispSize.cy = mImageDispRect.bottom - mImageDispRect.top;
+    if (update)
+      UpdateWindowDisp(true);
+    else
+      UpdateWindowDisp();
+  }
+  // ---------------------------------------------------------------------------
+  // UpdateStatusBar
+  // ---------------------------------------------------------------------------
+  void  UpdateStatusBar()
+  {
+    RECT  rect;
+    GetClientRect(mWindowH, &rect);
+
+    int statusbarSize[] = {100, 300, rect.right - 200, rect.right};
+    SendMessage(mStatusbarH, SB_SETPARTS, (WPARAM )4, (LPARAM )(LPINT)statusbarSize);
+
+#ifdef _UNICODE
+    wchar_t buf[IMAGE_WINDOW_STR_BUF_SIZE];
+
+    swprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT("Zoom: %.0f%%"), mImageDispScale * 100.0);
+    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )0, (LPARAM )buf);
+
+    if (mBitmapInfo != NULL)
+    {
+      swprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE,
+        TEXT("Image: %dx%dx%d"),
+        mBitmapInfo->biWidth, abs(mBitmapInfo->biHeight), mBitmapInfo->biBitCount);
+      SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )1, (LPARAM )buf);
+    }
+
+    swprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT("FPS: %.1f"), mFPSValue);
+    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )3, (LPARAM )buf);
+#else
+    char  buf[IMAGE_WINDOW_STR_BUF_SIZE];
+
+    sprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT("Zoom: %.0f%%"), mImageDispScale * 100.0);
+    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )0, (LPARAM )buf);
+
+    if (mBitmapInfo != NULL)
+    {
+      sprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE,
+        TEXT("Image: %dx%dx%d"),
+        mBitmapInfo->biWidth, abs(mBitmapInfo->biHeight), mBitmapInfo->biBitCount);
+      SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )1, (LPARAM )buf);
+    }
+
+    sprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT("FPS: %.1f"), mFPSValue);
+    SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )3, (LPARAM )buf);
+#endif
+  }
+  // ---------------------------------------------------------------------------
+  // CheckImageDispOffset
+  // ---------------------------------------------------------------------------
+  bool  CheckImageDispOffset()
+  {
+    int limit;
+    bool  update = false;
+    SIZE  prevOffset = mImageDispOffset;
+
+    limit = (int )(mImageSize.cx - mImageDispSize.cx / mImageDispScale);
+    if (mImageDispOffset.cx > limit)
+    {
+      mImageDispOffset.cx = limit;
+      update = true;
+    }
+    if (mImageDispOffset.cx < 0)
+    {
+      mImageDispOffset.cx = 0;
+      update = true;
+    }
+    limit = (int )(mImageSize.cy - mImageDispSize.cy / mImageDispScale);
+    if (mImageDispOffset.cy > limit)
+    {
+      mImageDispOffset.cy = limit;
+      update = true;
+    }
+    if (mImageDispOffset.cy < 0)
+    {
+      mImageDispOffset.cy = 0;
+      update = true;
+    }
+
+    if (prevOffset.cx == mImageDispOffset.cx &&
+      prevOffset.cy == mImageDispOffset.cy)
+      update = false;
+
+    return update;
+  }
+  // ---------------------------------------------------------------------------
+  // ImageToDispPoint
+  // ---------------------------------------------------------------------------
+  void  ImageToDispPoint(LONG *ioX, LONG *ioY)
+  {
+    if (mImageDispScale == 1.0)
+    {
+      *ioX = *ioX - mImageDispOffset.cx + mImageDispRect.left;
+      *ioY = *ioY - mImageDispOffset.cy + mImageDispRect.top;
+    }
+    else
+    {
+      *ioX = (int )((*ioX - mImageDispOffset.cx) * mImageDispScale) + mImageDispRect.left;
+      *ioY = (int )((*ioY - mImageDispOffset.cy) * mImageDispScale) + mImageDispRect.top;
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // ImageToDispRect
+  // ---------------------------------------------------------------------------
+  void  ImageToDispRect(RECT *ioRect)
+  {
+    ImageToDispPoint(&(ioRect->left), &(ioRect->top));
+    ImageToDispPoint(&(ioRect->right), &(ioRect->bottom));
+  }
+  // ---------------------------------------------------------------------------
+  // MyMonitorEnumProc
+  // ---------------------------------------------------------------------------
   static BOOL CALLBACK  MyMonitorEnumProc(HMONITOR hMon, HDC hdcMon, LPRECT inMonRect, LPARAM inLParam)
   {
     ImageWindow *imageWindow = (ImageWindow *)inLParam;
@@ -2383,12 +2601,14 @@ private:
     imageWindow->mMonitorRect[imageWindow->mMonitorNum].top = inMonRect->top;
     imageWindow->mMonitorRect[imageWindow->mMonitorNum].right = inMonRect->right;
     imageWindow->mMonitorRect[imageWindow->mMonitorNum].bottom = inMonRect->bottom;
-    if (imageWindow->mMonitorNum == MONITOR_ENUM_MAX - 1)
+    if (imageWindow->mMonitorNum == IMAGE_WINDOW_MONITOR_ENUM_MAX - 1)
       return FALSE;
     imageWindow->mMonitorNum++;
     return TRUE;
   }
-
+  // ---------------------------------------------------------------------------
+  // RegisterWindowClass
+  // ---------------------------------------------------------------------------
   int RegisterWindowClass()
   {
     WNDCLASSEX  wcx;
@@ -2426,164 +2646,9 @@ private:
 
     return 1;
   }
-
-  bool  PrepareImageBuffers(int inWidth, int inHeight, bool inIsColor, bool inIsBottomUp)
-  {
-    bool  doUpdateSize = CreateBitmapInfo(inWidth, inHeight, inIsColor, inIsBottomUp);
-
-    if (mAllocatedImageBuffer != NULL && doUpdateSize != false)
-    {
-      delete mAllocatedImageBuffer;
-      mAllocatedImageBuffer = NULL;
-    }
-
-    if (mAllocatedImageBuffer == NULL)
-      CreateNewImageBuffer(true);
-
-    return doUpdateSize;
-  }
-
-  bool  CreateBitmapInfo(int inWidth, int inHeight, bool inIsColor, bool inIsBottomUp)
-  {
-    mIsColorImage = inIsColor;
-
-    if (inIsColor)
-      return CreateColorBitmapInfo(inWidth, inHeight, inIsBottomUp);
-    else
-      return CreateMonoBitmapInfo(inWidth, inHeight, inIsBottomUp);
-  }
-
-  int   CreateNewImageBuffer(bool inDoZeroClear)
-  {
-    mAllocatedImageBuffer = new unsigned char[mBitmapBitsSize];
-    if (mAllocatedImageBuffer == NULL)
-    {
-      printf("Error: Can't allocate mBitmapBits (CreateNewImageBuffer)\n");
-      ReleaseMutex(mMutexHandle);
-      return 0;
-    }
-    mBitmapBits = mAllocatedImageBuffer;
-    if (inDoZeroClear == true)
-      ZeroMemory(mAllocatedImageBuffer, mBitmapBitsSize);
-
-    return 1;
-  }
-
-  bool  CreateMonoBitmapInfo(int inWidth, int inHeight, bool inIsBottomUp)
-  {
-    bool  doCreateBitmapInfo = false;
-
-    if (inIsBottomUp == true)
-      inHeight = abs(inHeight);
-    else
-      inHeight = -1 * abs(inHeight);
-
-    if (mBitmapInfo != NULL)
-    {
-      if (mBitmapInfo->biBitCount   != 8 ||
-        mBitmapInfo->biWidth    != inWidth ||
-        mBitmapInfo->biHeight   != inHeight)
-      {
-        doCreateBitmapInfo = true;
-      }
-    }
-    else
-    {
-      doCreateBitmapInfo = true;
-    }
-
-    if (doCreateBitmapInfo)
-    {
-      if (mBitmapInfo != NULL)
-        delete mBitmapInfo;
-
-      mBitmapInfoSize = sizeof(ImageBitmapInfoMono8);
-      mBitmapInfo = (BITMAPINFOHEADER *)(new unsigned char[mBitmapInfoSize]);
-      if (mBitmapInfo == NULL)
-      {
-        printf("Error: Can't allocate mBitmapInfo (CreateMonoBitmapInfo)\n");
-        return false;
-      }
-      ImageBitmapInfoMono8  *bitmapInfo = (ImageBitmapInfoMono8 *)mBitmapInfo;
-      bitmapInfo->Header.biSize     = sizeof(BITMAPINFOHEADER);
-      bitmapInfo->Header.biWidth      = inWidth;
-      bitmapInfo->Header.biHeight     = -1 * abs(inHeight);
-      bitmapInfo->Header.biPlanes     = 1;
-      bitmapInfo->Header.biBitCount   = 8;
-      bitmapInfo->Header.biCompression  = BI_RGB;
-      bitmapInfo->Header.biSizeImage    = 0;
-      bitmapInfo->Header.biXPelsPerMeter  = 100;
-      bitmapInfo->Header.biYPelsPerMeter  = 100;
-      bitmapInfo->Header.biClrUsed    = IMAGE_PALLET_SIZE_8BIT;
-      bitmapInfo->Header.biClrImportant = IMAGE_PALLET_SIZE_8BIT;
-
-      for (int i = 0; i < IMAGE_PALLET_SIZE_8BIT; i++)
-      {
-        bitmapInfo->RGBQuad[i].rgbBlue    = i;
-        bitmapInfo->RGBQuad[i].rgbGreen   = i;
-        bitmapInfo->RGBQuad[i].rgbRed   = i;
-        bitmapInfo->RGBQuad[i].rgbReserved  = 0;
-      }
-
-      mBitmapBitsSize = abs(inWidth * inHeight);
-    }
-
-    return doCreateBitmapInfo;
-  }
-
-  bool  CreateColorBitmapInfo(int inWidth, int inHeight, bool inIsBottomUp)
-  {
-    bool  doCreateBitmapInfo = false;
-
-    if (inIsBottomUp == true)
-      inHeight = abs(inHeight);
-    else
-      inHeight = -1 * abs(inHeight);
-
-    if (mBitmapInfo != NULL)
-    {
-      if (mBitmapInfo->biBitCount   != 24 ||
-        mBitmapInfo->biWidth    != inWidth ||
-        abs(mBitmapInfo->biHeight)  != inHeight)
-      {
-        doCreateBitmapInfo = true;
-      }
-    }
-    else
-    {
-      doCreateBitmapInfo = true;
-    }
-
-    if (doCreateBitmapInfo)
-    {
-      if (mBitmapInfo != NULL)
-        delete mBitmapInfo;
-
-      mBitmapInfoSize = sizeof(BITMAPINFOHEADER);
-      mBitmapInfo = (BITMAPINFOHEADER *)(new unsigned char[mBitmapInfoSize]);
-      if (mBitmapInfo == NULL)
-      {
-        printf("Error: Can't allocate mBitmapInfo (CreateColorBitmapInfo)\n");
-        return false;
-      }
-      mBitmapInfo->biSize       = sizeof(BITMAPINFOHEADER);
-      mBitmapInfo->biWidth      = inWidth;
-      mBitmapInfo->biHeight     = inHeight;
-      mBitmapInfo->biPlanes     = 1;
-      mBitmapInfo->biBitCount     = 24;
-      mBitmapInfo->biCompression    = BI_RGB;
-      mBitmapInfo->biSizeImage    = 0;
-      mBitmapInfo->biXPelsPerMeter  = 100;
-      mBitmapInfo->biYPelsPerMeter  = 100;
-      mBitmapInfo->biClrUsed      = 0;
-      mBitmapInfo->biClrImportant   = 0;
-
-      mBitmapBitsSize = abs(inWidth * inHeight * 3);
-    }
-
-    return doCreateBitmapInfo;
-  }
-
+  // ---------------------------------------------------------------------------
+  // InitMenu
+  // ---------------------------------------------------------------------------
   void  InitMenu()
   {
     mMenuH = CreateMenu();
@@ -2632,7 +2697,6 @@ private:
     AppendMenu(viewMenuH, MF_ENABLED, IDM_FULL_SCREEN, TEXT("&Full Screen"));
     AppendMenu(viewMenuH, MF_SEPARATOR, 0, NULL);
     AppendMenu(viewMenuH, MF_ENABLED, IDM_FPS, TEXT("FPS"));
-    AppendMenu(viewMenuH, MF_ENABLED, IDM_PLOT, TEXT("Plot"));
     AppendMenu(viewMenuH, MF_SEPARATOR, 0, NULL);
     AppendMenu(viewMenuH, MF_GRAYED, IDM_FREEZE, TEXT("Freeze"));
     AppendMenu(viewMenuH, MF_SEPARATOR, 0, NULL);
@@ -2659,7 +2723,9 @@ private:
     CheckMenuItem(mMenuH, IDM_TOOLBAR, MF_CHECKED);
     CheckMenuItem(mMenuH, IDM_STATUSBAR, MF_CHECKED);
   }
-
+  // ---------------------------------------------------------------------------
+  // InitToolbar
+  // ---------------------------------------------------------------------------
   void  InitToolbar()
   {
     typedef BOOL    (WINAPI *_InitCommonControlsEx)(LPINITCOMMONCONTROLSEX);
@@ -2694,6 +2760,7 @@ private:
 
       // Ensure common control DLL is loaded
       INITCOMMONCONTROLSEX icx;
+      ::ZeroMemory(&icx, sizeof(icx));
       icx.dwSize = sizeof(INITCOMMONCONTROLSEX);
       icx.dwICC = ICC_BAR_CLASSES | ICC_COOL_CLASSES; // Specify BAR classes
       (*_iw_InitCommonControlsEx)(&icx); // Load the common control DLL
@@ -2709,10 +2776,9 @@ private:
     rInfo.cbSize = sizeof(REBARINFO);
     SendMessage(mRebarH, RB_SETBARINFO, 0, (LPARAM )&rInfo);
 
-#define TOOLBAR_BUTTON_NUM  16
-    TBBUTTON  tbb[TOOLBAR_BUTTON_NUM];
+    TBBUTTON  tbb[IMAGE_WINDOW_TOOLBAR_BUTTON_NUM];
     ZeroMemory(&tbb, sizeof(tbb));
-    for (int i = 0; i < TOOLBAR_BUTTON_NUM; i++)
+    for (int i = 0; i < IMAGE_WINDOW_TOOLBAR_BUTTON_NUM; i++)
     {
       tbb[i].fsState = TBSTATE_ENABLED;
       tbb[i].fsStyle = TBSTYLE_BUTTON | BTNS_AUTOSIZE;
@@ -2892,6 +2958,7 @@ private:
     unsigned char header[sizeof(imageHeader)];
     unsigned char data[512];
     ::CopyMemory(header, imageHeader, sizeof(imageHeader));
+    ::ZeroMemory(data, sizeof(data));
     BITMAPINFOHEADER  *bitmapHeader = (BITMAPINFOHEADER *)header;
     if (mIsHiDPI)
     {
@@ -2945,7 +3012,7 @@ private:
     }
 
     SendMessage(mToolbarH, TB_SETIMAGELIST, (WPARAM )0, (LPARAM )imageList);
-    SendMessage(mToolbarH, TB_ADDBUTTONS, (WPARAM )TOOLBAR_BUTTON_NUM, (LPARAM )tbb);
+    SendMessage(mToolbarH, TB_ADDBUTTONS, (WPARAM )IMAGE_WINDOW_TOOLBAR_BUTTON_NUM, (LPARAM )tbb);
 
     REBARBANDINFO rbInfo;
     ZeroMemory(&rbInfo, sizeof(REBARBANDINFO));
@@ -2967,7 +3034,9 @@ private:
       0, 0, 0, 0, mWindowH, NULL, NULL, NULL);
     UpdateStatusBar();
   }
-
+  // ---------------------------------------------------------------------------
+  // InitCursor
+  // ---------------------------------------------------------------------------
   void  InitCursor()
   {
     static const unsigned char andPlane[3][128] = {{  // Scroll Hand
@@ -3052,7 +3121,9 @@ private:
     mArrowCursor  = LoadCursor(NULL, IDC_ARROW);
     mInfoCursor   = LoadCursor(NULL, IDC_CROSS);
   }
-
+  // ---------------------------------------------------------------------------
+  // InitIcon
+  // ---------------------------------------------------------------------------
   void  InitIcon()
   {
     static const unsigned char  data[] = {
@@ -3080,5 +3151,287 @@ private:
 
     mAppIconH = CreateIconFromResourceEx((PBYTE )data, 296, TRUE, 0x00030000, 16, 16, 0);
   }
+  // ---------------------------------------------------------------------------
+  // GetColorMap
+  // ---------------------------------------------------------------------------
+  static const unsigned char *GetColorMap(ColorMap inColorMap)
+  {
+    static const unsigned char s_grayscale_map[256*3] =
+    {
+      0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x02, 0x02, 0x02, 0x03, 0x03, 0x03, 0x04, 0x04, 0x04, 0x05,
+      0x05, 0x05, 0x06, 0x06, 0x06, 0x07, 0x07, 0x07, 0x08, 0x08, 0x08, 0x09, 0x09, 0x09, 0x0A, 0x0A,
+      0x0A, 0x0B, 0x0B, 0x0B, 0x0C, 0x0C, 0x0C, 0x0D, 0x0D, 0x0D, 0x0E, 0x0E, 0x0E, 0x0F, 0x0F, 0x0F,
+      0x10, 0x10, 0x10, 0x11, 0x11, 0x11, 0x12, 0x12, 0x12, 0x13, 0x13, 0x13, 0x14, 0x14, 0x14, 0x15,
+      0x15, 0x15, 0x16, 0x16, 0x16, 0x17, 0x17, 0x17, 0x18, 0x18, 0x18, 0x19, 0x19, 0x19, 0x1A, 0x1A,
+      0x1A, 0x1B, 0x1B, 0x1B, 0x1C, 0x1C, 0x1C, 0x1D, 0x1D, 0x1D, 0x1E, 0x1E, 0x1E, 0x1F, 0x1F, 0x1F,
+      0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x22, 0x22, 0x22, 0x23, 0x23, 0x23, 0x24, 0x24, 0x24, 0x24,
+      0x24, 0x24, 0x26, 0x26, 0x26, 0x27, 0x27, 0x27, 0x28, 0x28, 0x28, 0x28, 0x28, 0x28, 0x2A, 0x2A,
+      0x2A, 0x2B, 0x2B, 0x2B, 0x2C, 0x2C, 0x2C, 0x2C, 0x2C, 0x2C, 0x2E, 0x2E, 0x2E, 0x2F, 0x2F, 0x2F,
+      0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x32, 0x32, 0x32, 0x33, 0x33, 0x33, 0x34, 0x34, 0x34, 0x34,
+      0x34, 0x34, 0x36, 0x36, 0x36, 0x37, 0x37, 0x37, 0x38, 0x38, 0x38, 0x38, 0x38, 0x38, 0x3A, 0x3A,
+      0x3A, 0x3B, 0x3B, 0x3B, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3E, 0x3E, 0x3E, 0x3F, 0x3F, 0x3F,
+      0x40, 0x40, 0x40, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x43, 0x43, 0x43, 0x44, 0x44, 0x44, 0x45,
+      0x45, 0x45, 0x46, 0x46, 0x46, 0x47, 0x47, 0x47, 0x48, 0x48, 0x48, 0x49, 0x49, 0x49, 0x49, 0x49,
+      0x49, 0x4B, 0x4B, 0x4B, 0x4C, 0x4C, 0x4C, 0x4D, 0x4D, 0x4D, 0x4E, 0x4E, 0x4E, 0x4F, 0x4F, 0x4F,
+      0x50, 0x50, 0x50, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x53, 0x53, 0x53, 0x54, 0x54, 0x54, 0x55,
+      0x55, 0x55, 0x56, 0x56, 0x56, 0x57, 0x57, 0x57, 0x58, 0x58, 0x58, 0x59, 0x59, 0x59, 0x59, 0x59,
+      0x59, 0x5B, 0x5B, 0x5B, 0x5C, 0x5C, 0x5C, 0x5D, 0x5D, 0x5D, 0x5E, 0x5E, 0x5E, 0x5F, 0x5F, 0x5F,
+      0x60, 0x60, 0x60, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x63, 0x63, 0x63, 0x64, 0x64, 0x64, 0x65,
+      0x65, 0x65, 0x66, 0x66, 0x66, 0x67, 0x67, 0x67, 0x68, 0x68, 0x68, 0x69, 0x69, 0x69, 0x69, 0x69,
+      0x69, 0x6B, 0x6B, 0x6B, 0x6C, 0x6C, 0x6C, 0x6D, 0x6D, 0x6D, 0x6E, 0x6E, 0x6E, 0x6F, 0x6F, 0x6F,
+      0x70, 0x70, 0x70, 0x71, 0x71, 0x71, 0x71, 0x71, 0x71, 0x73, 0x73, 0x73, 0x74, 0x74, 0x74, 0x75,
+      0x75, 0x75, 0x76, 0x76, 0x76, 0x77, 0x77, 0x77, 0x78, 0x78, 0x78, 0x79, 0x79, 0x79, 0x79, 0x79,
+      0x79, 0x7B, 0x7B, 0x7B, 0x7C, 0x7C, 0x7C, 0x7D, 0x7D, 0x7D, 0x7E, 0x7E, 0x7E, 0x7F, 0x7F, 0x7F,
+      0x80, 0x80, 0x80, 0x81, 0x81, 0x81, 0x82, 0x82, 0x82, 0x83, 0x83, 0x83, 0x83, 0x83, 0x83, 0x85,
+      0x85, 0x85, 0x86, 0x86, 0x86, 0x87, 0x87, 0x87, 0x88, 0x88, 0x88, 0x89, 0x89, 0x89, 0x8A, 0x8A,
+      0x8A, 0x8B, 0x8B, 0x8B, 0x8C, 0x8C, 0x8C, 0x8D, 0x8D, 0x8D, 0x8E, 0x8E, 0x8E, 0x8F, 0x8F, 0x8F,
+      0x90, 0x90, 0x90, 0x91, 0x91, 0x91, 0x92, 0x92, 0x92, 0x93, 0x93, 0x93, 0x93, 0x93, 0x93, 0x95,
+      0x95, 0x95, 0x96, 0x96, 0x96, 0x97, 0x97, 0x97, 0x98, 0x98, 0x98, 0x99, 0x99, 0x99, 0x9A, 0x9A,
+      0x9A, 0x9B, 0x9B, 0x9B, 0x9C, 0x9C, 0x9C, 0x9D, 0x9D, 0x9D, 0x9E, 0x9E, 0x9E, 0x9F, 0x9F, 0x9F,
+      0xA0, 0xA0, 0xA0, 0xA1, 0xA1, 0xA1, 0xA2, 0xA2, 0xA2, 0xA3, 0xA3, 0xA3, 0xA3, 0xA3, 0xA3, 0xA5,
+      0xA5, 0xA5, 0xA6, 0xA6, 0xA6, 0xA7, 0xA7, 0xA7, 0xA8, 0xA8, 0xA8, 0xA9, 0xA9, 0xA9, 0xAA, 0xAA,
+      0xAA, 0xAB, 0xAB, 0xAB, 0xAC, 0xAC, 0xAC, 0xAD, 0xAD, 0xAD, 0xAE, 0xAE, 0xAE, 0xAF, 0xAF, 0xAF,
+      0xB0, 0xB0, 0xB0, 0xB1, 0xB1, 0xB1, 0xB2, 0xB2, 0xB2, 0xB3, 0xB3, 0xB3, 0xB3, 0xB3, 0xB3, 0xB5,
+      0xB5, 0xB5, 0xB6, 0xB6, 0xB6, 0xB7, 0xB7, 0xB7, 0xB8, 0xB8, 0xB8, 0xB9, 0xB9, 0xB9, 0xBA, 0xBA,
+      0xBA, 0xBB, 0xBB, 0xBB, 0xBC, 0xBC, 0xBC, 0xBD, 0xBD, 0xBD, 0xBE, 0xBE, 0xBE, 0xBF, 0xBF, 0xBF,
+      0xC0, 0xC0, 0xC0, 0xC1, 0xC1, 0xC1, 0xC2, 0xC2, 0xC2, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC5,
+      0xC5, 0xC5, 0xC6, 0xC6, 0xC6, 0xC7, 0xC7, 0xC7, 0xC8, 0xC8, 0xC8, 0xC9, 0xC9, 0xC9, 0xCA, 0xCA,
+      0xCA, 0xCB, 0xCB, 0xCB, 0xCC, 0xCC, 0xCC, 0xCD, 0xCD, 0xCD, 0xCE, 0xCE, 0xCE, 0xCF, 0xCF, 0xCF,
+      0xD0, 0xD0, 0xD0, 0xD1, 0xD1, 0xD1, 0xD2, 0xD2, 0xD2, 0xD3, 0xD3, 0xD3, 0xD3, 0xD3, 0xD3, 0xD5,
+      0xD5, 0xD5, 0xD6, 0xD6, 0xD6, 0xD7, 0xD7, 0xD7, 0xD8, 0xD8, 0xD8, 0xD9, 0xD9, 0xD9, 0xDA, 0xDA,
+      0xDA, 0xDB, 0xDB, 0xDB, 0xDC, 0xDC, 0xDC, 0xDD, 0xDD, 0xDD, 0xDE, 0xDE, 0xDE, 0xDF, 0xDF, 0xDF,
+      0xE0, 0xE0, 0xE0, 0xE1, 0xE1, 0xE1, 0xE2, 0xE2, 0xE2, 0xE3, 0xE3, 0xE3, 0xE3, 0xE3, 0xE3, 0xE5,
+      0xE5, 0xE5, 0xE6, 0xE6, 0xE6, 0xE7, 0xE7, 0xE7, 0xE8, 0xE8, 0xE8, 0xE9, 0xE9, 0xE9, 0xEA, 0xEA,
+      0xEA, 0xEB, 0xEB, 0xEB, 0xEC, 0xEC, 0xEC, 0xED, 0xED, 0xED, 0xEE, 0xEE, 0xEE, 0xEF, 0xEF, 0xEF,
+      0xF0, 0xF0, 0xF0, 0xF1, 0xF1, 0xF1, 0xF2, 0xF2, 0xF2, 0xF3, 0xF3, 0xF3, 0xF3, 0xF3, 0xF3, 0xF5,
+      0xF5, 0xF5, 0xF6, 0xF6, 0xF6, 0xF7, 0xF7, 0xF7, 0xF8, 0xF8, 0xF8, 0xF9, 0xF9, 0xF9, 0xFA, 0xFA,
+      0xFA, 0xFB, 0xFB, 0xFB, 0xFC, 0xFC, 0xFC, 0xFD, 0xFD, 0xFD, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF
+    };
+    static const unsigned char s_jet_map[256*3] =
+    {
+      0x00, 0x00, 0x7F, 0x00, 0x00, 0x84, 0x00, 0x00, 0x89, 0x00, 0x00, 0x8F, 0x00, 0x00, 0x94, 0x00,
+      0x00, 0x99, 0x00, 0x00, 0x9F, 0x00, 0x00, 0xA4, 0x00, 0x00, 0xA9, 0x00, 0x00, 0xAF, 0x00, 0x00,
+      0xB4, 0x00, 0x00, 0xB9, 0x00, 0x00, 0xBF, 0x00, 0x00, 0xC4, 0x00, 0x00, 0xC9, 0x00, 0x00, 0xCF,
+      0x00, 0x00, 0xD4, 0x00, 0x00, 0xD9, 0x00, 0x00, 0xDF, 0x00, 0x00, 0xE4, 0x00, 0x00, 0xE9, 0x00,
+      0x00, 0xEF, 0x00, 0x00, 0xF4, 0x00, 0x00, 0xF9, 0x00, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0x04,
+      0xFF, 0x00, 0x08, 0xFF, 0x00, 0x0C, 0xFF, 0x00, 0x10, 0xFF, 0x00, 0x14, 0xFF, 0x00, 0x18, 0xFF,
+      0x00, 0x1C, 0xFF, 0x00, 0x20, 0xFF, 0x00, 0x25, 0xFF, 0x00, 0x29, 0xFF, 0x00, 0x2D, 0xFF, 0x00,
+      0x31, 0xFE, 0x00, 0x35, 0xFF, 0x00, 0x39, 0xFF, 0x00, 0x3D, 0xFF, 0x00, 0x41, 0xFF, 0x00, 0x45,
+      0xFF, 0x00, 0x4A, 0xFF, 0x00, 0x4E, 0xFF, 0x00, 0x52, 0xFF, 0x00, 0x56, 0xFF, 0x00, 0x5A, 0xFF,
+      0x00, 0x5E, 0xFF, 0x00, 0x62, 0xFF, 0x00, 0x66, 0xFF, 0x00, 0x6A, 0xFF, 0x00, 0x6F, 0xFF, 0x00,
+      0x73, 0xFE, 0x00, 0x77, 0xFF, 0x00, 0x7B, 0xFF, 0x00, 0x7F, 0xFF, 0x00, 0x83, 0xFF, 0x00, 0x87,
+      0xFF, 0x00, 0x8B, 0xFF, 0x00, 0x8F, 0xFF, 0x00, 0x94, 0xFF, 0x00, 0x98, 0xFF, 0x00, 0x9C, 0xFF,
+      0x00, 0xA0, 0xFF, 0x00, 0xA4, 0xFF, 0x00, 0xA8, 0xFF, 0x00, 0xAC, 0xFF, 0x00, 0xB0, 0xFF, 0x00,
+      0xB4, 0xFF, 0x00, 0xB9, 0xFF, 0x00, 0xBD, 0xFF, 0x00, 0xC1, 0xFF, 0x00, 0xC5, 0xFF, 0x00, 0xC9,
+      0xFF, 0x00, 0xCD, 0xFF, 0x00, 0xD1, 0xFF, 0x00, 0xD5, 0xFF, 0x00, 0xD9, 0xFF, 0x00, 0xDE, 0xFF,
+      0x00, 0xE2, 0xFF, 0x00, 0xE6, 0xFF, 0x00, 0xEA, 0xFF, 0x00, 0xEE, 0xFF, 0x00, 0xF2, 0xFF, 0x00,
+      0xF6, 0xFF, 0x00, 0xFA, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0xF8, 0x00, 0xFF,
+      0xF1, 0x00, 0xFF, 0xEA, 0x00, 0xFF, 0xE3, 0x00, 0xFF, 0xDC, 0x00, 0xFF, 0xD5, 0x00, 0xFF, 0xCE,
+      0x00, 0xFF, 0xC7, 0x00, 0xFF, 0xC0, 0x00, 0xFF, 0xBA, 0x00, 0xFF, 0xB3, 0x00, 0xFF, 0xAC, 0x00,
+      0xFF, 0xA5, 0x00, 0xFF, 0x9E, 0x00, 0xFF, 0x97, 0x00, 0xFF, 0x90, 0x00, 0xFF, 0x89, 0x00, 0xFF,
+      0x82, 0x00, 0xFF, 0x7C, 0x00, 0xFF, 0x75, 0x00, 0xFF, 0x6E, 0x00, 0xFF, 0x67, 0x00, 0xFF, 0x60,
+      0x00, 0xFF, 0x59, 0x00, 0xFF, 0x52, 0x00, 0xFF, 0x4B, 0x00, 0xFF, 0x44, 0x00, 0xFF, 0x3E, 0x00,
+      0xFF, 0x37, 0x00, 0xFF, 0x30, 0x00, 0xFF, 0x29, 0x00, 0xFF, 0x22, 0x00, 0xFF, 0x1B, 0x00, 0xFF,
+      0x14, 0x00, 0xFF, 0x0D, 0x00, 0xFF, 0x06, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0x06, 0xFF, 0x00,
+      0x0D, 0xFF, 0x00, 0x14, 0xFF, 0x00, 0x1B, 0xFF, 0x00, 0x22, 0xFF, 0x00, 0x29, 0xFF, 0x00, 0x30,
+      0xFF, 0x00, 0x37, 0xFF, 0x00, 0x3E, 0xFF, 0x00, 0x44, 0xFF, 0x00, 0x4B, 0xFF, 0x00, 0x52, 0xFF,
+      0x00, 0x59, 0xFF, 0x00, 0x60, 0xFF, 0x00, 0x67, 0xFF, 0x00, 0x6E, 0xFF, 0x00, 0x75, 0xFF, 0x00,
+      0x7C, 0xFF, 0x00, 0x82, 0xFF, 0x00, 0x89, 0xFF, 0x00, 0x90, 0xFF, 0x00, 0x97, 0xFF, 0x00, 0x9E,
+      0xFF, 0x00, 0xA5, 0xFF, 0x00, 0xAC, 0xFF, 0x00, 0xB3, 0xFF, 0x00, 0xBA, 0xFF, 0x00, 0xC0, 0xFF,
+      0x00, 0xC7, 0xFF, 0x00, 0xCE, 0xFF, 0x00, 0xD5, 0xFF, 0x00, 0xDC, 0xFF, 0x00, 0xE3, 0xFF, 0x00,
+      0xEA, 0xFF, 0x00, 0xF1, 0xFF, 0x00, 0xF8, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF,
+      0xFA, 0x00, 0xFF, 0xF6, 0x00, 0xFE, 0xF2, 0x00, 0xFF, 0xEE, 0x00, 0xFF, 0xEA, 0x00, 0xFF, 0xE6,
+      0x00, 0xFF, 0xE2, 0x00, 0xFF, 0xDE, 0x00, 0xFF, 0xDA, 0x00, 0xFF, 0xD6, 0x00, 0xFE, 0xD2, 0x00,
+      0xFF, 0xCE, 0x00, 0xFF, 0xCA, 0x00, 0xFF, 0xC6, 0x00, 0xFF, 0xC2, 0x00, 0xFF, 0xBE, 0x00, 0xFF,
+      0xBA, 0x00, 0xFF, 0xB6, 0x00, 0xFE, 0xB2, 0x00, 0xFF, 0xAE, 0x00, 0xFF, 0xAA, 0x00, 0xFF, 0xA5,
+      0x00, 0xFF, 0xA1, 0x00, 0xFF, 0x9D, 0x00, 0xFF, 0x99, 0x00, 0xFF, 0x95, 0x00, 0xFE, 0x91, 0x00,
+      0xFF, 0x8D, 0x00, 0xFF, 0x89, 0x00, 0xFF, 0x85, 0x00, 0xFF, 0x81, 0x00, 0xFF, 0x7D, 0x00, 0xFF,
+      0x79, 0x00, 0xFF, 0x75, 0x00, 0xFF, 0x71, 0x00, 0xFF, 0x6D, 0x00, 0xFF, 0x69, 0x00, 0xFF, 0x65,
+      0x00, 0xFF, 0x61, 0x00, 0xFF, 0x5D, 0x00, 0xFF, 0x59, 0x00, 0xFF, 0x55, 0x00, 0xFF, 0x50, 0x00,
+      0xFF, 0x4C, 0x00, 0xFF, 0x48, 0x00, 0xFF, 0x44, 0x00, 0xFF, 0x40, 0x00, 0xFF, 0x3C, 0x00, 0xFF,
+      0x38, 0x00, 0xFF, 0x34, 0x00, 0xFF, 0x30, 0x00, 0xFF, 0x2C, 0x00, 0xFF, 0x28, 0x00, 0xFF, 0x24,
+      0x00, 0xFF, 0x20, 0x00, 0xFF, 0x1C, 0x00, 0xFF, 0x18, 0x00, 0xFF, 0x14, 0x00, 0xFF, 0x10, 0x00,
+      0xFF, 0x0C, 0x00, 0xFF, 0x08, 0x00, 0xFF, 0x04, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0x00, 0xFA,
+      0x00, 0x00, 0xF5, 0x00, 0x00, 0xF0, 0x00, 0x00, 0xEC, 0x00, 0x00, 0xE7, 0x00, 0x00, 0xE2, 0x00,
+      0x00, 0xDD, 0x00, 0x00, 0xD9, 0x00, 0x00, 0xD4, 0x00, 0x00, 0xCF, 0x00, 0x00, 0xCA, 0x00, 0x00,
+      0xC6, 0x00, 0x00, 0xC1, 0x00, 0x00, 0xBC, 0x00, 0x00, 0xB7, 0x00, 0x00, 0xB3, 0x00, 0x00, 0xAE,
+      0x00, 0x00, 0xA9, 0x00, 0x00, 0xA4, 0x00, 0x00, 0xA0, 0x00, 0x00, 0x9B, 0x00, 0x00, 0x96, 0x00,
+      0x00, 0x91, 0x00, 0x00, 0x8D, 0x00, 0x00, 0x88, 0x00, 0x00, 0x83, 0x00, 0x00, 0x7F, 0x00, 0x00
+    };
+    static const unsigned char s_rainbow_map[256*3] =
+    {
+      0x00, 0x00, 0xFF, 0x00, 0x04, 0xFF, 0x00, 0x08, 0xFF, 0x00, 0x0C, 0xFE, 0x00, 0x10, 0xFF, 0x00,
+      0x14, 0xFF, 0x00, 0x18, 0xFF, 0x00, 0x1C, 0xFF, 0x00, 0x20, 0xFF, 0x00, 0x24, 0xFF, 0x00, 0x28,
+      0xFF, 0x00, 0x2C, 0xFE, 0x00, 0x30, 0xFF, 0x00, 0x34, 0xFF, 0x00, 0x38, 0xFF, 0x00, 0x3C, 0xFF,
+      0x00, 0x40, 0xFF, 0x00, 0x44, 0xFF, 0x00, 0x48, 0xFF, 0x00, 0x4C, 0xFE, 0x00, 0x50, 0xFF, 0x00,
+      0x55, 0xFF, 0x00, 0x59, 0xFF, 0x00, 0x5D, 0xFF, 0x00, 0x61, 0xFF, 0x00, 0x65, 0xFF, 0x00, 0x69,
+      0xFF, 0x00, 0x6D, 0xFE, 0x00, 0x71, 0xFF, 0x00, 0x75, 0xFF, 0x00, 0x79, 0xFF, 0x00, 0x7D, 0xFF,
+      0x00, 0x81, 0xFF, 0x00, 0x85, 0xFF, 0x00, 0x89, 0xFF, 0x00, 0x8D, 0xFF, 0x00, 0x91, 0xFF, 0x00,
+      0x95, 0xFF, 0x00, 0x99, 0xFF, 0x00, 0x9D, 0xFF, 0x00, 0xA1, 0xFF, 0x00, 0xA5, 0xFF, 0x00, 0xAA,
+      0xFF, 0x00, 0xAE, 0xFF, 0x00, 0xB2, 0xFF, 0x00, 0xB6, 0xFF, 0x00, 0xBA, 0xFF, 0x00, 0xBE, 0xFF,
+      0x00, 0xC2, 0xFF, 0x00, 0xC6, 0xFF, 0x00, 0xCA, 0xFF, 0x00, 0xCE, 0xFF, 0x00, 0xD2, 0xFF, 0x00,
+      0xD6, 0xFF, 0x00, 0xDA, 0xFF, 0x00, 0xDE, 0xFF, 0x00, 0xE2, 0xFF, 0x00, 0xE6, 0xFF, 0x00, 0xEA,
+      0xFF, 0x00, 0xEE, 0xFF, 0x00, 0xF2, 0xFF, 0x00, 0xF6, 0xFF, 0x00, 0xFA, 0xFF, 0x00, 0xFF, 0xFF,
+      0x00, 0xFF, 0xFF, 0x00, 0xFF, 0xFA, 0x00, 0xFF, 0xF6, 0x00, 0xFE, 0xF2, 0x00, 0xFF, 0xEE, 0x00,
+      0xFF, 0xEA, 0x00, 0xFF, 0xE6, 0x00, 0xFF, 0xE2, 0x00, 0xFF, 0xDE, 0x00, 0xFF, 0xDA, 0x00, 0xFF,
+      0xD6, 0x00, 0xFE, 0xD2, 0x00, 0xFF, 0xCE, 0x00, 0xFF, 0xCA, 0x00, 0xFF, 0xC6, 0x00, 0xFF, 0xC2,
+      0x00, 0xFF, 0xBE, 0x00, 0xFF, 0xBA, 0x00, 0xFF, 0xB6, 0x00, 0xFE, 0xB2, 0x00, 0xFF, 0xAE, 0x00,
+      0xFF, 0xAA, 0x00, 0xFF, 0xA5, 0x00, 0xFF, 0xA1, 0x00, 0xFF, 0x9D, 0x00, 0xFF, 0x99, 0x00, 0xFF,
+      0x95, 0x00, 0xFE, 0x91, 0x00, 0xFF, 0x8D, 0x00, 0xFF, 0x89, 0x00, 0xFF, 0x85, 0x00, 0xFF, 0x81,
+      0x00, 0xFF, 0x7D, 0x00, 0xFF, 0x79, 0x00, 0xFF, 0x75, 0x00, 0xFF, 0x71, 0x00, 0xFF, 0x6D, 0x00,
+      0xFF, 0x69, 0x00, 0xFF, 0x65, 0x00, 0xFF, 0x61, 0x00, 0xFF, 0x5D, 0x00, 0xFF, 0x59, 0x00, 0xFF,
+      0x55, 0x00, 0xFF, 0x50, 0x00, 0xFF, 0x4C, 0x00, 0xFF, 0x48, 0x00, 0xFF, 0x44, 0x00, 0xFF, 0x40,
+      0x00, 0xFF, 0x3C, 0x00, 0xFF, 0x38, 0x00, 0xFF, 0x34, 0x00, 0xFF, 0x30, 0x00, 0xFF, 0x2C, 0x00,
+      0xFF, 0x28, 0x00, 0xFF, 0x24, 0x00, 0xFF, 0x20, 0x00, 0xFF, 0x1C, 0x00, 0xFF, 0x18, 0x00, 0xFF,
+      0x14, 0x00, 0xFF, 0x10, 0x00, 0xFF, 0x0C, 0x00, 0xFF, 0x08, 0x00, 0xFF, 0x04, 0x00, 0xFF, 0x00,
+      0x00, 0xFF, 0x00, 0x04, 0xFF, 0x00, 0x08, 0xFF, 0x00, 0x0C, 0xFE, 0x00, 0x10, 0xFF, 0x00, 0x14,
+      0xFF, 0x00, 0x18, 0xFF, 0x00, 0x1C, 0xFF, 0x00, 0x20, 0xFF, 0x00, 0x24, 0xFF, 0x00, 0x28, 0xFF,
+      0x00, 0x2C, 0xFE, 0x00, 0x30, 0xFF, 0x00, 0x34, 0xFF, 0x00, 0x38, 0xFF, 0x00, 0x3C, 0xFF, 0x00,
+      0x40, 0xFF, 0x00, 0x44, 0xFF, 0x00, 0x48, 0xFF, 0x00, 0x4C, 0xFE, 0x00, 0x50, 0xFF, 0x00, 0x55,
+      0xFF, 0x00, 0x59, 0xFF, 0x00, 0x5D, 0xFF, 0x00, 0x61, 0xFF, 0x00, 0x65, 0xFF, 0x00, 0x69, 0xFF,
+      0x00, 0x6D, 0xFE, 0x00, 0x71, 0xFF, 0x00, 0x75, 0xFF, 0x00, 0x79, 0xFF, 0x00, 0x7D, 0xFF, 0x00,
+      0x81, 0xFF, 0x00, 0x85, 0xFF, 0x00, 0x89, 0xFF, 0x00, 0x8D, 0xFF, 0x00, 0x91, 0xFF, 0x00, 0x95,
+      0xFF, 0x00, 0x99, 0xFF, 0x00, 0x9D, 0xFF, 0x00, 0xA1, 0xFF, 0x00, 0xA5, 0xFF, 0x00, 0xAA, 0xFF,
+      0x00, 0xAE, 0xFF, 0x00, 0xB2, 0xFF, 0x00, 0xB6, 0xFF, 0x00, 0xBA, 0xFF, 0x00, 0xBE, 0xFF, 0x00,
+      0xC2, 0xFF, 0x00, 0xC6, 0xFF, 0x00, 0xCA, 0xFF, 0x00, 0xCE, 0xFF, 0x00, 0xD2, 0xFF, 0x00, 0xD6,
+      0xFF, 0x00, 0xDA, 0xFF, 0x00, 0xDE, 0xFF, 0x00, 0xE2, 0xFF, 0x00, 0xE6, 0xFF, 0x00, 0xEA, 0xFF,
+      0x00, 0xEE, 0xFF, 0x00, 0xF2, 0xFF, 0x00, 0xF6, 0xFF, 0x00, 0xFA, 0xFF, 0x00, 0xFF, 0xFF, 0x00,
+      0xFF, 0xFF, 0x00, 0xFF, 0xFA, 0x00, 0xFF, 0xF6, 0x00, 0xFE, 0xF2, 0x00, 0xFF, 0xEE, 0x00, 0xFF,
+      0xEA, 0x00, 0xFF, 0xE6, 0x00, 0xFF, 0xE2, 0x00, 0xFF, 0xDE, 0x00, 0xFF, 0xDA, 0x00, 0xFF, 0xD6,
+      0x00, 0xFE, 0xD2, 0x00, 0xFF, 0xCE, 0x00, 0xFF, 0xCA, 0x00, 0xFF, 0xC6, 0x00, 0xFF, 0xC2, 0x00,
+      0xFF, 0xBE, 0x00, 0xFF, 0xBA, 0x00, 0xFF, 0xB6, 0x00, 0xFE, 0xB2, 0x00, 0xFF, 0xAE, 0x00, 0xFF,
+      0xAA, 0x00, 0xFF, 0xA5, 0x00, 0xFF, 0xA1, 0x00, 0xFF, 0x9D, 0x00, 0xFF, 0x99, 0x00, 0xFF, 0x95,
+      0x00, 0xFE, 0x91, 0x00, 0xFF, 0x8D, 0x00, 0xFF, 0x89, 0x00, 0xFF, 0x85, 0x00, 0xFF, 0x81, 0x00,
+      0xFF, 0x7D, 0x00, 0xFF, 0x79, 0x00, 0xFF, 0x75, 0x00, 0xFF, 0x71, 0x00, 0xFF, 0x6D, 0x00, 0xFF,
+      0x69, 0x00, 0xFF, 0x65, 0x00, 0xFF, 0x61, 0x00, 0xFF, 0x5D, 0x00, 0xFF, 0x59, 0x00, 0xFF, 0x55,
+      0x00, 0xFF, 0x50, 0x00, 0xFF, 0x4C, 0x00, 0xFF, 0x48, 0x00, 0xFF, 0x44, 0x00, 0xFF, 0x40, 0x00,
+      0xFF, 0x3C, 0x00, 0xFF, 0x38, 0x00, 0xFF, 0x34, 0x00, 0xFF, 0x30, 0x00, 0xFF, 0x2C, 0x00, 0xFF,
+      0x28, 0x00, 0xFF, 0x24, 0x00, 0xFF, 0x20, 0x00, 0xFF, 0x1C, 0x00, 0xFF, 0x18, 0x00, 0xFF, 0x14,
+      0x00, 0xFF, 0x10, 0x00, 0xFF, 0x0C, 0x00, 0xFF, 0x08, 0x00, 0xFF, 0x04, 0x00, 0xFF, 0x00, 0x00
+    };
+    static const unsigned char s_spectrum_map[256*3] =
+    {
+      0xFF, 0x00, 0xFF, 0xF4, 0x00, 0xFF, 0xE9, 0x00, 0xFF, 0xDF, 0x00, 0xFF, 0xD4, 0x00, 0xFF, 0xC9,
+      0x00, 0xFF, 0xBF, 0x00, 0xFF, 0xB4, 0x00, 0xFF, 0xAA, 0x00, 0xFF, 0x9F, 0x00, 0xFF, 0x94, 0x00,
+      0xFF, 0x8A, 0x00, 0xFF, 0x7F, 0x00, 0xFF, 0x74, 0x00, 0xFF, 0x6A, 0x00, 0xFF, 0x5F, 0x00, 0xFF,
+      0x55, 0x00, 0xFF, 0x4A, 0x00, 0xFF, 0x3F, 0x00, 0xFF, 0x35, 0x00, 0xFF, 0x2A, 0x00, 0xFF, 0x1F,
+      0x00, 0xFF, 0x15, 0x00, 0xFF, 0x0A, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0x05,
+      0xFF, 0x00, 0x0A, 0xFE, 0x00, 0x0F, 0xFF, 0x00, 0x14, 0xFF, 0x00, 0x19, 0xFF, 0x00, 0x1E, 0xFF,
+      0x00, 0x23, 0xFF, 0x00, 0x28, 0xFF, 0x00, 0x2D, 0xFF, 0x00, 0x33, 0xFF, 0x00, 0x38, 0xFF, 0x00,
+      0x3D, 0xFF, 0x00, 0x42, 0xFF, 0x00, 0x47, 0xFF, 0x00, 0x4C, 0xFF, 0x00, 0x51, 0xFF, 0x00, 0x56,
+      0xFF, 0x00, 0x5B, 0xFF, 0x00, 0x60, 0xFF, 0x00, 0x66, 0xFF, 0x00, 0x6B, 0xFF, 0x00, 0x70, 0xFF,
+      0x00, 0x75, 0xFF, 0x00, 0x7A, 0xFF, 0x00, 0x7F, 0xFF, 0x00, 0x84, 0xFF, 0x00, 0x89, 0xFF, 0x00,
+      0x8E, 0xFF, 0x00, 0x93, 0xFF, 0x00, 0x99, 0xFF, 0x00, 0x9E, 0xFF, 0x00, 0xA3, 0xFF, 0x00, 0xA8,
+      0xFF, 0x00, 0xAD, 0xFF, 0x00, 0xB2, 0xFF, 0x00, 0xB7, 0xFF, 0x00, 0xBC, 0xFF, 0x00, 0xC1, 0xFF,
+      0x00, 0xC6, 0xFF, 0x00, 0xCC, 0xFF, 0x00, 0xD1, 0xFF, 0x00, 0xD6, 0xFF, 0x00, 0xDB, 0xFF, 0x00,
+      0xE0, 0xFF, 0x00, 0xE5, 0xFF, 0x00, 0xEA, 0xFF, 0x00, 0xEF, 0xFF, 0x00, 0xF4, 0xFF, 0x00, 0xF9,
+      0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0xF8, 0x00, 0xFF, 0xF1, 0x00, 0xFF, 0xEA,
+      0x00, 0xFF, 0xE3, 0x00, 0xFF, 0xDC, 0x00, 0xFF, 0xD5, 0x00, 0xFF, 0xCE, 0x00, 0xFF, 0xC7, 0x00,
+      0xFF, 0xC0, 0x00, 0xFF, 0xBA, 0x00, 0xFF, 0xB3, 0x00, 0xFF, 0xAC, 0x00, 0xFF, 0xA5, 0x00, 0xFF,
+      0x9E, 0x00, 0xFF, 0x97, 0x00, 0xFF, 0x90, 0x00, 0xFF, 0x89, 0x00, 0xFF, 0x82, 0x00, 0xFF, 0x7C,
+      0x00, 0xFF, 0x75, 0x00, 0xFF, 0x6E, 0x00, 0xFF, 0x67, 0x00, 0xFF, 0x60, 0x00, 0xFF, 0x59, 0x00,
+      0xFF, 0x52, 0x00, 0xFF, 0x4B, 0x00, 0xFF, 0x44, 0x00, 0xFF, 0x3E, 0x00, 0xFF, 0x37, 0x00, 0xFF,
+      0x30, 0x00, 0xFF, 0x29, 0x00, 0xFF, 0x22, 0x00, 0xFF, 0x1B, 0x00, 0xFF, 0x14, 0x00, 0xFF, 0x0D,
+      0x00, 0xFF, 0x06, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0x06, 0xFF, 0x00, 0x0D, 0xFF, 0x00, 0x14,
+      0xFF, 0x00, 0x1B, 0xFF, 0x00, 0x22, 0xFF, 0x00, 0x29, 0xFF, 0x00, 0x30, 0xFF, 0x00, 0x37, 0xFF,
+      0x00, 0x3E, 0xFF, 0x00, 0x44, 0xFF, 0x00, 0x4B, 0xFF, 0x00, 0x52, 0xFF, 0x00, 0x59, 0xFF, 0x00,
+      0x60, 0xFF, 0x00, 0x67, 0xFF, 0x00, 0x6E, 0xFF, 0x00, 0x75, 0xFF, 0x00, 0x7C, 0xFF, 0x00, 0x82,
+      0xFF, 0x00, 0x89, 0xFF, 0x00, 0x90, 0xFF, 0x00, 0x97, 0xFF, 0x00, 0x9E, 0xFF, 0x00, 0xA5, 0xFF,
+      0x00, 0xAC, 0xFF, 0x00, 0xB3, 0xFF, 0x00, 0xBA, 0xFF, 0x00, 0xC0, 0xFF, 0x00, 0xC7, 0xFF, 0x00,
+      0xCE, 0xFF, 0x00, 0xD5, 0xFF, 0x00, 0xDC, 0xFF, 0x00, 0xE3, 0xFF, 0x00, 0xEA, 0xFF, 0x00, 0xF1,
+      0xFF, 0x00, 0xF8, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0xFC, 0x00, 0xFF, 0xFA,
+      0x00, 0xFF, 0xF7, 0x00, 0xFF, 0xF5, 0x00, 0xFF, 0xF2, 0x00, 0xFF, 0xF0, 0x00, 0xFF, 0xED, 0x00,
+      0xFF, 0xEB, 0x00, 0xFF, 0xE8, 0x00, 0xFF, 0xE6, 0x00, 0xFF, 0xE3, 0x00, 0xFF, 0xE1, 0x00, 0xFF,
+      0xDE, 0x00, 0xFF, 0xDC, 0x00, 0xFF, 0xD9, 0x00, 0xFF, 0xD7, 0x00, 0xFF, 0xD4, 0x00, 0xFF, 0xD2,
+      0x00, 0xFF, 0xCF, 0x00, 0xFF, 0xCD, 0x00, 0xFE, 0xCB, 0x00, 0xFF, 0xC8, 0x00, 0xFF, 0xC6, 0x00,
+      0xFE, 0xC3, 0x00, 0xFF, 0xC1, 0x00, 0xFF, 0xBE, 0x00, 0xFF, 0xBC, 0x00, 0xFF, 0xB9, 0x00, 0xFF,
+      0xB7, 0x00, 0xFF, 0xB4, 0x00, 0xFF, 0xB2, 0x00, 0xFF, 0xAF, 0x00, 0xFF, 0xAD, 0x00, 0xFF, 0xAA,
+      0x00, 0xFF, 0xA8, 0x00, 0xFF, 0xA5, 0x00, 0xFF, 0xA3, 0x00, 0xFF, 0xA0, 0x00, 0xFF, 0x9E, 0x00,
+      0xFF, 0x9B, 0x00, 0xFE, 0x99, 0x00, 0xFF, 0x97, 0x00, 0xFF, 0x94, 0x00, 0xFF, 0x92, 0x00, 0xFF,
+      0x8F, 0x00, 0xFE, 0x8D, 0x00, 0xFF, 0x8A, 0x00, 0xFF, 0x88, 0x00, 0xFE, 0x85, 0x00, 0xFF, 0x83,
+      0x00, 0xFF, 0x80, 0x00, 0xFF, 0x7E, 0x00, 0xFF, 0x7B, 0x00, 0xFF, 0x79, 0x00, 0xFF, 0x76, 0x00,
+      0xFF, 0x74, 0x00, 0xFF, 0x71, 0x00, 0xFF, 0x6F, 0x00, 0xFF, 0x6C, 0x00, 0xFF, 0x6A, 0x00, 0xFF,
+      0x67, 0x00, 0xFF, 0x65, 0x00, 0xFF, 0x63, 0x00, 0xFF, 0x60, 0x00, 0xFF, 0x5E, 0x00, 0xFF, 0x5B,
+      0x00, 0xFF, 0x59, 0x00, 0xFF, 0x56, 0x00, 0xFF, 0x54, 0x00, 0xFF, 0x51, 0x00, 0xFF, 0x4F, 0x00,
+      0xFF, 0x4C, 0x00, 0xFF, 0x4A, 0x00, 0xFF, 0x47, 0x00, 0xFF, 0x45, 0x00, 0xFF, 0x42, 0x00, 0xFF,
+      0x40, 0x00, 0xFF, 0x3D, 0x00, 0xFF, 0x3B, 0x00, 0xFF, 0x38, 0x00, 0xFF, 0x36, 0x00, 0xFF, 0x33,
+      0x00, 0xFF, 0x31, 0x00, 0xFF, 0x2F, 0x00, 0xFF, 0x2C, 0x00, 0xFF, 0x2A, 0x00, 0xFF, 0x27, 0x00,
+      0xFF, 0x25, 0x00, 0xFF, 0x22, 0x00, 0xFF, 0x20, 0x00, 0xFF, 0x1D, 0x00, 0xFF, 0x1B, 0x00, 0xFF,
+      0x18, 0x00, 0xFF, 0x16, 0x00, 0xFF, 0x13, 0x00, 0xFF, 0x11, 0x00, 0xFF, 0x0E, 0x00, 0xFF, 0x0C,
+      0x00, 0xFF, 0x09, 0x00, 0xFF, 0x07, 0x00, 0xFF, 0x04, 0x00, 0xFF, 0x02, 0x00, 0xFF, 0x00, 0x00
+    };
+    static const unsigned char s_coolwarm_map[256*3] =
+    {
+      0x3B, 0x4B, 0xC0, 0x3C, 0x4D, 0xC1, 0x3D, 0x4F, 0xC3, 0x3E, 0x51, 0xC4, 0x3F, 0x52, 0xC6, 0x40,
+      0x54, 0xC7, 0x41, 0x56, 0xC9, 0x43, 0x58, 0xCA, 0x44, 0x59, 0xCC, 0x45, 0x5B, 0xCD, 0x46, 0x5D,
+      0xCF, 0x47, 0x5F, 0xD0, 0x49, 0x60, 0xD1, 0x4A, 0x62, 0xD3, 0x4B, 0x64, 0xD4, 0x4C, 0x65, 0xD6,
+      0x4D, 0x67, 0xD7, 0x4F, 0x69, 0xD8, 0x50, 0x6B, 0xD9, 0x51, 0x6C, 0xDB, 0x52, 0x6E, 0xDC, 0x54,
+      0x70, 0xDD, 0x55, 0x71, 0xDE, 0x56, 0x73, 0xE0, 0x57, 0x75, 0xE1, 0x59, 0x76, 0xE2, 0x5A, 0x78,
+      0xE3, 0x5B, 0x79, 0xE4, 0x5C, 0x7B, 0xE5, 0x5E, 0x7D, 0xE6, 0x5F, 0x7E, 0xE7, 0x60, 0x80, 0xE8,
+      0x62, 0x81, 0xE9, 0x63, 0x83, 0xEA, 0x64, 0x85, 0xEB, 0x66, 0x86, 0xEC, 0x67, 0x88, 0xED, 0x68,
+      0x89, 0xEE, 0x69, 0x8B, 0xEF, 0x6B, 0x8C, 0xF0, 0x6C, 0x8E, 0xF1, 0x6D, 0x8F, 0xF1, 0x6F, 0x91,
+      0xF2, 0x70, 0x92, 0xF3, 0x72, 0x94, 0xF4, 0x73, 0x95, 0xF4, 0x74, 0x97, 0xF5, 0x76, 0x98, 0xF6,
+      0x77, 0x9A, 0xF6, 0x78, 0x9B, 0xF7, 0x7A, 0x9D, 0xF8, 0x7B, 0x9E, 0xF8, 0x7C, 0xA0, 0xF9, 0x7E,
+      0xA1, 0xF9, 0x7F, 0xA2, 0xFA, 0x81, 0xA4, 0xFA, 0x82, 0xA5, 0xFB, 0x83, 0xA6, 0xFB, 0x85, 0xA8,
+      0xFB, 0x86, 0xA9, 0xFC, 0x87, 0xAA, 0xFC, 0x89, 0xAC, 0xFD, 0x8A, 0xAD, 0xFD, 0x8C, 0xAE, 0xFD,
+      0x8D, 0xAF, 0xFD, 0x8E, 0xB1, 0xFE, 0x90, 0xB2, 0xFE, 0x91, 0xB3, 0xFE, 0x93, 0xB4, 0xFE, 0x94,
+      0xB5, 0xFE, 0x95, 0xB7, 0xFE, 0x97, 0xB8, 0xFE, 0x98, 0xB9, 0xFE, 0x99, 0xBA, 0xFE, 0x9B, 0xBB,
+      0xFE, 0x9C, 0xBC, 0xFE, 0x9E, 0xBD, 0xFE, 0x9F, 0xBE, 0xFE, 0xA0, 0xBF, 0xFE, 0xA2, 0xC0, 0xFE,
+      0xA3, 0xC1, 0xFE, 0xA4, 0xC2, 0xFE, 0xA6, 0xC3, 0xFE, 0xA7, 0xC4, 0xFD, 0xA8, 0xC5, 0xFD, 0xAA,
+      0xC6, 0xFD, 0xAB, 0xC7, 0xFD, 0xAC, 0xC8, 0xFC, 0xAE, 0xC9, 0xFC, 0xAF, 0xCA, 0xFC, 0xB0, 0xCB,
+      0xFB, 0xB2, 0xCB, 0xFB, 0xB3, 0xCC, 0xFA, 0xB4, 0xCD, 0xFA, 0xB6, 0xCE, 0xF9, 0xB7, 0xCF, 0xF9,
+      0xB8, 0xCF, 0xF8, 0xB9, 0xD0, 0xF8, 0xBB, 0xD1, 0xF7, 0xBC, 0xD1, 0xF7, 0xBD, 0xD2, 0xF6, 0xBF,
+      0xD3, 0xF5, 0xC0, 0xD3, 0xF5, 0xC1, 0xD4, 0xF4, 0xC2, 0xD4, 0xF3, 0xC3, 0xD5, 0xF2, 0xC5, 0xD6,
+      0xF2, 0xC6, 0xD6, 0xF1, 0xC7, 0xD7, 0xF0, 0xC8, 0xD7, 0xEF, 0xC9, 0xD8, 0xEE, 0xCB, 0xD8, 0xEE,
+      0xCC, 0xD8, 0xED, 0xCD, 0xD9, 0xEC, 0xCE, 0xD9, 0xEB, 0xCF, 0xD9, 0xEA, 0xD0, 0xDA, 0xE9, 0xD1,
+      0xDA, 0xE8, 0xD2, 0xDA, 0xE7, 0xD3, 0xDB, 0xE6, 0xD5, 0xDB, 0xE5, 0xD6, 0xDB, 0xE4, 0xD7, 0xDB,
+      0xE3, 0xD8, 0xDC, 0xE1, 0xD9, 0xDC, 0xE0, 0xDA, 0xDC, 0xDF, 0xDB, 0xDC, 0xDE, 0xDC, 0xDC, 0xDD,
+      0xDD, 0xDC, 0xDB, 0xDE, 0xDB, 0xDA, 0xDF, 0xDB, 0xD9, 0xE0, 0xDA, 0xD7, 0xE1, 0xDA, 0xD6, 0xE2,
+      0xD9, 0xD4, 0xE3, 0xD9, 0xD3, 0xE4, 0xD8, 0xD1, 0xE5, 0xD8, 0xD0, 0xE6, 0xD7, 0xCF, 0xE7, 0xD6,
+      0xCD, 0xE8, 0xD6, 0xCC, 0xE8, 0xD5, 0xCA, 0xE9, 0xD4, 0xC9, 0xEA, 0xD4, 0xC7, 0xEB, 0xD3, 0xC6,
+      0xEC, 0xD2, 0xC4, 0xEC, 0xD1, 0xC3, 0xED, 0xD0, 0xC1, 0xEE, 0xD0, 0xC0, 0xEE, 0xCF, 0xBE, 0xEF,
+      0xCE, 0xBD, 0xF0, 0xCD, 0xBB, 0xF0, 0xCC, 0xB9, 0xF1, 0xCB, 0xB8, 0xF1, 0xCA, 0xB6, 0xF2, 0xC9,
+      0xB5, 0xF2, 0xC8, 0xB3, 0xF3, 0xC7, 0xB2, 0xF3, 0xC6, 0xB0, 0xF4, 0xC5, 0xAF, 0xF4, 0xC4, 0xAD,
+      0xF4, 0xC3, 0xAB, 0xF5, 0xC2, 0xAA, 0xF5, 0xC1, 0xA8, 0xF5, 0xC0, 0xA7, 0xF6, 0xBF, 0xA5, 0xF6,
+      0xBE, 0xA4, 0xF6, 0xBC, 0xA2, 0xF6, 0xBB, 0xA0, 0xF6, 0xBA, 0x9F, 0xF7, 0xB9, 0x9D, 0xF7, 0xB7,
+      0x9C, 0xF7, 0xB6, 0x9A, 0xF7, 0xB5, 0x98, 0xF7, 0xB4, 0x97, 0xF7, 0xB2, 0x95, 0xF7, 0xB1, 0x94,
+      0xF7, 0xB0, 0x92, 0xF7, 0xAE, 0x91, 0xF7, 0xAD, 0x8F, 0xF7, 0xAC, 0x8D, 0xF7, 0xAA, 0x8C, 0xF7,
+      0xA9, 0x8A, 0xF6, 0xA7, 0x89, 0xF6, 0xA6, 0x87, 0xF6, 0xA4, 0x86, 0xF6, 0xA3, 0x84, 0xF6, 0xA1,
+      0x82, 0xF5, 0xA0, 0x81, 0xF5, 0x9E, 0x7F, 0xF5, 0x9D, 0x7E, 0xF4, 0x9B, 0x7C, 0xF4, 0x9A, 0x7B,
+      0xF4, 0x98, 0x79, 0xF3, 0x96, 0x78, 0xF3, 0x95, 0x76, 0xF2, 0x93, 0x75, 0xF2, 0x92, 0x73, 0xF1,
+      0x90, 0x72, 0xF1, 0x8E, 0x70, 0xF0, 0x8D, 0x6E, 0xF0, 0x8B, 0x6D, 0xEF, 0x89, 0x6B, 0xEF, 0x88,
+      0x6A, 0xEE, 0x86, 0x68, 0xED, 0x84, 0x67, 0xED, 0x82, 0x66, 0xEC, 0x80, 0x64, 0xEB, 0x7F, 0x63,
+      0xEB, 0x7D, 0x61, 0xEA, 0x7B, 0x60, 0xE9, 0x79, 0x5E, 0xE8, 0x77, 0x5D, 0xE8, 0x76, 0x5B, 0xE7,
+      0x74, 0x5A, 0xE6, 0x72, 0x59, 0xE5, 0x70, 0x57, 0xE4, 0x6E, 0x56, 0xE3, 0x6C, 0x54, 0xE2, 0x6A,
+      0x53, 0xE1, 0x68, 0x52, 0xE0, 0x66, 0x50, 0xDF, 0x64, 0x4F, 0xDE, 0x62, 0x4D, 0xDD, 0x60, 0x4C,
+      0xDC, 0x5E, 0x4B, 0xDB, 0x5C, 0x49, 0xDA, 0x5A, 0x48, 0xD9, 0x58, 0x47, 0xD8, 0x56, 0x45, 0xD7,
+      0x54, 0x44, 0xD6, 0x52, 0x43, 0xD5, 0x50, 0x42, 0xD3, 0x4D, 0x40, 0xD2, 0x4B, 0x3F, 0xD1, 0x49,
+      0x3E, 0xD0, 0x47, 0x3C, 0xCE, 0x44, 0x3B, 0xCD, 0x42, 0x3A, 0xCC, 0x40, 0x39, 0xCB, 0x3D, 0x38,
+      0xC9, 0x3B, 0x36, 0xC8, 0x38, 0x35, 0xC7, 0x36, 0x34, 0xC5, 0x33, 0x33, 0xC4, 0x30, 0x32, 0xC2,
+      0x2E, 0x30, 0xC1, 0x2B, 0x2F, 0xC0, 0x28, 0x2E, 0xBE, 0x25, 0x2D, 0xBD, 0x21, 0x2C, 0xBB, 0x1E,
+      0x2B, 0xBA, 0x1A, 0x2A, 0xB8, 0x16, 0x29, 0xB7, 0x11, 0x28, 0xB5, 0x0B, 0x27, 0xB4, 0x03, 0x26
+    };
+
+    const unsigned char *map = s_grayscale_map;
+    switch (inColorMap)
+    {
+      case COLORMAP_GRAYSCALE:
+        map = s_grayscale_map;
+        break;
+      case COLORMAP_JET:
+        map = s_jet_map;
+        break;
+      case COLORMAP_RAINBOW:
+        map = s_rainbow_map;
+        break;
+      case COLORMAP_SEPECTRUM:
+        map = s_spectrum_map;
+        break;
+      case COLORMAP_COOLWARM:
+        map = s_coolwarm_map;
+        break;
+    }
+    return map;
+  }
 };
-#endif  // #ifdef __IMAGE_WINDOW_H
+#endif  // #ifdef IMAGE_WINDOW_H
