@@ -1261,6 +1261,9 @@ private:
       mBitmapInfo->biClrImportant   = 0;
 
       mBitmapBitsSize = (size_t)abs(inWidth * inHeight * 3);
+
+      mImageSize.cx = mBitmapInfo->biWidth;
+      mImageSize.cy = abs(mBitmapInfo->biHeight);
     }
 
     return doCreateBitmapInfo;
