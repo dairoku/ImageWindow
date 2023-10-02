@@ -138,6 +138,8 @@ public:
     mFPSValue             = 0;
     mImageClickNum        = 0;
 
+    mFreezeWindow         = NULL;
+
     ::ZeroMemory(&mImageSize, sizeof(mImageSize));
 
     if (inPosX == IMAGE_WINDOW_AUTO_POS ||
@@ -234,6 +236,9 @@ public:
 
     if (mWindowTitle != NULL)
       delete mWindowTitle;
+
+    if (mFreezeWindow != NULL)
+      delete mFreezeWindow;
   }
   // ---------------------------------------------------------------------------
   // Buffer related member functions -------------------------------------------
@@ -261,9 +266,10 @@ public:
   // ---------------------------------------------------------------------------
   // SetExternalBuffer
   // ---------------------------------------------------------------------------
-  void  SetExternalBuffer(int inWidth, int inHeight,
+  bool  SetExternalBuffer(int inWidth, int inHeight,
                           unsigned char *inExternalBuffer,
-                          bool inIsColor, bool inIsBottomUp = false)
+                          bool inIsColor, bool inIsBottomUp = false,
+                          bool inSkipUpdate = false)
   {
     DWORD result;
     bool  doUpdateSize;
@@ -272,7 +278,7 @@ public:
     if (result != WAIT_OBJECT_0)
     {
       printf("Error: WaitForSingleObject failed (SetExternalBuffer)\n");
-      return;
+      return false;
     }
     doUpdateSize = CreateBitmapInfo(inWidth, inHeight, inIsColor, inIsBottomUp);
 
@@ -285,17 +291,20 @@ public:
     mBitmapBits = inExternalBuffer;
     ReleaseMutex(mMutexHandle);
 
-    UpdateFPS();
-    if (doUpdateSize)
-      UpdateWindowSize();
-    else
-      UpdateWindow();
+    if (inSkipUpdate)
+      return doUpdateSize;
+
+    if (inSkipUpdate)
+      return doUpdateSize;
+
+    return UpdateWindow(doUpdateSize);
   }
   // ---------------------------------------------------------------------------
   // CopyImage
   // ---------------------------------------------------------------------------
-  void  CopyImage(int inWidth, int inHeight, const unsigned char *inImage,
-                  bool inIsColor, bool inIsBottomUp = false)
+  bool  CopyImage(int inWidth, int inHeight, const unsigned char *inImage,
+                  bool inIsColor, bool inIsBottomUp = false,
+                  bool inSkipUpdate = false)
   {
     DWORD result;
     bool  doUpdateSize;
@@ -304,30 +313,65 @@ public:
     if (result != WAIT_OBJECT_0)
     {
       printf("Error: WaitForSingleObject failed (AllocateMonoImageBuffer)\n");
-      return;
+      return false;
     }
     doUpdateSize = PrepareBuffer(inWidth, inHeight, inIsColor, inIsBottomUp);
     ::CopyMemory(GetBufferPtr(), inImage, GetBufferSize());
 
     ReleaseMutex(mMutexHandle);
 
-    UpdateFPS();
-    if (doUpdateSize)
-      UpdateWindowSize();
-    else
-      UpdateWindow();
+    if (inSkipUpdate)
+      return doUpdateSize;
+
+    return UpdateWindow(doUpdateSize);
+  }
+  // ---------------------------------------------------------------------------
+  // CopyWindow
+  // ---------------------------------------------------------------------------
+  bool  CopyWindow(ImageWindow *inWindow)
+  {
+    if (inWindow->GetBufferPtr() == NULL)
+      return false;
+
+    bool doUpdateSize = CopyImage(
+                          inWindow->GetWidth(), inWindow->GetHeight(),
+                          inWindow->GetBufferPtr(),
+                          inWindow->IsColor(), inWindow->IsBottomUp(),
+                          true);
+    DWORD result = WaitForSingleObject(mMutexHandle, INFINITE);
+    if (result != WAIT_OBJECT_0)
+    {
+      printf("Error: WaitForSingleObject failed (CopyWindow)\n");
+      return false;
+    }
+    if (IsColor() == false)
+    {
+      // This is to copy a colormap of a mono image
+      ::memcpy(mBitmapInfo, inWindow->mBitmapInfo, mBitmapInfoSize);
+    }
+    mLabelList = inWindow->mLabelList;
+    mOverlayText = inWindow->mOverlayText;
+    mOverlayTextLineList = inWindow->mOverlayTextLineList;
+    ReleaseMutex(mMutexHandle);
+
+    return UpdateWindow(doUpdateSize);
   }
   // ---------------------------------------------------------------------------
   // UpdateWindow
   // ---------------------------------------------------------------------------
-  void  UpdateWindow()
+  bool  UpdateWindow(bool inUpdateSize = false)
   {
     if (IsWindowOpen() == false)
-      return;
+      return false;
 
     UpdateFPS();
+    UpdateLabelList();
     UpdateMousePixelReadout();
-    UpdateWindowDisp();
+    if (inUpdateSize)
+      UpdateWindowSize();
+    else
+      UpdateWindowDisp();
+    return inUpdateSize;
   }
   // ---------------------------------------------------------------------------
   // GetBufferPtr
@@ -478,6 +522,9 @@ public:
     fclose(fp);
     ReleaseMutex(mMutexHandle);
 
+    mImageSize.cx = mBitmapInfo->biWidth;
+    mImageSize.cy = abs(mBitmapInfo->biHeight);
+
     UpdateWindowSize();
     UpdateWindowDisp();
     return true;
@@ -524,7 +571,6 @@ public:
       if (fopen_s(&fp, fileNamePtr, "wb") != 0)
       {
         printf("Error: Can't create file %s (WriteBitmapFile)\n", fileNamePtr);
-        ReleaseMutex(mMutexHandle);
         return false;
       }
     }
@@ -533,34 +579,29 @@ public:
       if (inFileName == NULL)
       {
         printf("Error: Can't create file (WriteBitmapFile(inIsUnicode = true))\n");
-        ReleaseMutex(mMutexHandle);
         return false;
       }
       if (_wfopen_s(&fp, (wchar_t *)inFileName, L"wb") != 0)
       {
         printf("Error: Can't create file (WriteBitmapFile(inIsUnicode = true))\n");
-        ReleaseMutex(mMutexHandle);
         return false;
       }
     }
     if (fp == NULL)
     {
       printf("Error: fp == NUL (WriteBitmapFile)\n");
-      ReleaseMutex(mMutexHandle);
       return false;
     }
 
     if (fwrite(&fileHeader, sizeof(BITMAPFILEHEADER), 1, fp) != 1)
     {
       printf("Error: Can't write file (WriteBitmapFile)\n");
-      ReleaseMutex(mMutexHandle);
       fclose(fp);
       return false;
     }
     if (fwrite(buf, mBitmapInfoSize + mBitmapBitsSize, 1, fp) != 1)
     {
       printf("Error: Can't write file (WriteBitmapFile)\n");
-      ReleaseMutex(mMutexHandle);
       fclose(fp);
       return false;
     }
@@ -675,10 +716,17 @@ public:
   // ---------------------------------------------------------------------------
   void  SetOverlayText(const char *inText)
   {
+    DWORD result = WaitForSingleObject(mMutexHandle, INFINITE);
+    if (result != WAIT_OBJECT_0)
+    {
+      printf("Error: WaitForSingleObject failed (UpdateLabelList)\n");
+      return;
+    }
     if (inText == NULL)
     {
       mOverlayText.clear();
       mOverlayTextLineList.clear();
+      ReleaseMutex(mMutexHandle);
       return;
     }
     mOverlayText = inText;
@@ -701,6 +749,7 @@ public:
     }
     if (line.len != 0)
       mOverlayTextLineList.push_back(line);
+    ReleaseMutex(mMutexHandle);
   }
   // ---------------------------------------------------------------------------
   // Window related member functions -------------------------------------------
@@ -1063,6 +1112,35 @@ public:
       bitmapInfo->RGBQuad[i].rgbReserved    = 0;
     }
   }
+  // ---------------------------------------------------------------------------
+  // FreezeWindow
+  // ---------------------------------------------------------------------------
+  void  FreezeWindow()
+  {
+    if (mFreezeWindow == NULL)
+    {
+      std::string   name(mWindowTitle);
+      name += " (Freeze)";
+      mFreezeWindow = new ImageWindow(name.c_str());
+    }
+    DWORD result = WaitForSingleObject(mMutexHandle, INFINITE);
+    if (result != WAIT_OBJECT_0)
+    {
+      printf("Error: WaitForSingleObject failed (FreezeWindow)\n");
+      return;
+    }
+    ReleaseMutex(mMutexHandle);
+    mFreezeWindow->CopyWindow(this);
+    if (mFreezeWindow->IsWindowOpen() == false)
+      mFreezeWindow->ShowWindow();
+  }
+  // ---------------------------------------------------------------------------
+  // FreezeWindow
+  // ---------------------------------------------------------------------------
+  ImageWindow *GetFreezeWindow()
+  {
+    return mFreezeWindow;
+  }
 
 private:
   enum
@@ -1108,6 +1186,7 @@ private:
   } TextLine;
 
   std::vector<LabelItem>  mLabelList;
+  std::vector<LabelItem>  mDispLabelList;
   std::string mOverlayText;
   std::vector<TextLine>  mOverlayTextLineList;
 
@@ -1169,6 +1248,8 @@ private:
 
   int               mMonitorNum;
   RECT              mMonitorRect[IMAGE_WINDOW_MONITOR_ENUM_MAX];
+
+  ImageWindow       *mFreezeWindow;
 
   // ---------------------------------------------------------------------------
   // Buffer related member functions -------------------------------------------
@@ -1813,6 +1894,7 @@ private:
       case IDM_FPS:
         break;
       case IDM_FREEZE:
+        FreezeWindow();
         break;
       case IDM_SCROLL_TOOL:
         SetCursorMode(CURSOR_MODE_SCROLL_TOOL);
@@ -2255,7 +2337,7 @@ private:
     else
       scale = width / (double )mImageSize.cx;
 
-    return scale * 100.0;
+    return scale;
   }
   // ---------------------------------------------------------------------------
   // IsScrollable
@@ -2319,6 +2401,20 @@ private:
     sprintf_s(buf, IMAGE_WINDOW_STR_BUF_SIZE, TEXT("FPS: %.1f (avg.=%.1f)"), mFPSValue, averageValue);
     SendMessage(mStatusbarH, SB_SETTEXT, (WPARAM )3, (LPARAM )buf);
 #endif
+  }
+  // ---------------------------------------------------------------------------
+  // UpdateLabelList
+  // ---------------------------------------------------------------------------
+  void  UpdateLabelList()
+  {
+    DWORD result = WaitForSingleObject(mMutexHandle, INFINITE);
+    if (result != WAIT_OBJECT_0)
+    {
+      printf("Error: WaitForSingleObject failed (UpdateLabelList)\n");
+      return;
+    }
+    mDispLabelList = mLabelList;
+    ReleaseMutex(mMutexHandle);
   }
   // ---------------------------------------------------------------------------
   // UpdateMousePixelReadout
@@ -2701,7 +2797,7 @@ private:
     AppendMenu(viewMenuH, MF_SEPARATOR, 0, NULL);
     AppendMenu(viewMenuH, MF_ENABLED, IDM_FPS, TEXT("FPS"));
     AppendMenu(viewMenuH, MF_SEPARATOR, 0, NULL);
-    AppendMenu(viewMenuH, MF_GRAYED, IDM_FREEZE, TEXT("Freeze"));
+    AppendMenu(viewMenuH, MF_ENABLED, IDM_FREEZE, TEXT("Freeze"));
     AppendMenu(viewMenuH, MF_SEPARATOR, 0, NULL);
     AppendMenu(viewMenuH, MF_ENABLED, IDM_SCROLL_TOOL, TEXT("Scroll Tool"));
     AppendMenu(viewMenuH, MF_ENABLED, IDM_ZOOM_TOOL, TEXT("Zoom Tool"));
